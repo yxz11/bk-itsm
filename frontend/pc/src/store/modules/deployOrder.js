@@ -30,9 +30,14 @@ export default {
             basic: '',
             lines: '',
             timeOut: ''
+        },
+        nodeList: []
+    },
+    mutations: {
+        setNodeList (state, value) {
+            state.nodeList = value || []
         }
     },
-    mutations: {},
     actions: {
         // 获取线条流转颜色
         getLineStatus ({ commit, state, dispatch }, { basicId }) {
@@ -84,6 +89,13 @@ export default {
         },
         newAssignDeliver ({ commit, state, dispatch }, { params, id }) {
             return ajax.post(`ticket/receipts/${id}/operate/`, params).then(response => {
+                const res = response.data
+                return res
+            })
+        },
+        // 异常分派
+        exceptionDistribute({ commit, state, dispatch }, { params, id }) {
+            return ajax.post(`ticket/receipts/${id}/exception_distribute/`, params).then(response => {
                 const res = response.data
                 return res
             })

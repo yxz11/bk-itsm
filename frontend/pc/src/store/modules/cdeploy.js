@@ -340,7 +340,19 @@ export default {
                 return res
             })
         },
+        putWebHook ({ commit, state, dispatch }, { params, stateId }) {
+            return ajax.put(`workflow/states/${stateId}/`, params).then(response => {
+                let res = response.data
+                return res
+            })
+        },
         putSopsInfo ({ commit, state, dispatch }, { params, stateId }) {
+            return ajax.put(`workflow/states/${stateId}/`, params).then(response => {
+                let res = response.data
+                return res
+            })
+        },
+        putDevopsInfo ({ commit, state, dispatch }, { params, stateId }) {
             return ajax.put(`workflow/states/${stateId}/`, params).then(response => {
                 let res = response.data
                 return res

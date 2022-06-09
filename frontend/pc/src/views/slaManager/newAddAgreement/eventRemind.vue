@@ -23,8 +23,8 @@
 <template>
     <div class="bk-priority-configur">
         <ul class="bk-priority-head">
-            <li style="width: 140px;padding-left: 50px"><span>{{ $t('m.slaContent["提醒事件"]') }}</span></li>
-            <li style="width: calc(19% - 35px);"><span>{{ $t('m.slaContent["提醒规则"]') }}</span></li>
+            <li style="width: 140px;padding-left: 50px"><span>{{ $t('m["提醒事件"]') }}</span></li>
+            <li style="width: calc(19% - 35px);"><span>{{ $t('m["提醒规则"]') }}</span></li>
             <li style="width: calc(21% - 35px);"><span>{{ $t('m.slaContent["提醒对象"]') }}</span></li>
             <li style="width: calc(24% - 35px);"><span>{{ $t('m.slaContent["提醒方式"]') }}</span></li>
             <li style="width: calc(36% - 35px);"><span>{{ $t('m.slaContent["提醒频率"]') }}</span></li>
@@ -33,7 +33,7 @@
         <ul class="bk-priority-head bk-priority-body" v-for="(item, index) in priorityList" :key="index">
             <li style="width: 140px;padding-right: 10px;" class="bk-transform-10" v-if="!item.hasCheckBox || hasCheckBox">
                 <span>
-                    <bk-checkbox v-if="item.hasCheckBox" style="padding-right: 10px" v-model="item.isCheck"></bk-checkbox>
+                    <bk-checkbox data-test-id="slaAgreement-checkbox-eventName" v-if="item.hasCheckBox" style="padding-right: 10px" v-model="item.isCheck"></bk-checkbox>
                     <span v-else style="padding-right: 30px"></span>
                     {{item.eventName}}
                 </span>
@@ -47,7 +47,7 @@
                     <bk-form-item>
                         {{item.remindRuleText}}
                         <span v-if="'remindRuleValue' in item" class="bk-border-bottom">
-                            <bk-popconfirm placement="bottom" confirm-text="" cancel-text="" trigger="click">
+                            <bk-popconfirm data-test-id="slaAgreement-popconfirm-remindRuleValue" placement="bottom" confirm-text="" cancel-text="" trigger="click">
                                 <div slot="content" style="width: 188px;padding-top: 6px">
                                     <bk-slider v-model="item.remindRuleValue"></bk-slider>
                                 </div>
@@ -68,6 +68,7 @@
                     :rules="receiversRules"
                     ref="receivers">
                     <bk-form-item
+                        data-test-id="slaAgreement-select-receivers"
                         :property="'receivers'">
                         <bk-select v-model="item.receivers" :ext-cls="'cus-align-left'" :clearable="false">
                             <bk-option v-for="option in receiversOptionList"
@@ -88,12 +89,16 @@
                     :model="item"
                     :rules="notifyTypeRules"
                     ref="notifyType">
-                    <bk-checkbox-group v-model="item.notify_type_list" @change="notifyTypeChange(item.notify_type_list, index)">
+                    <bk-checkbox-group data-test-id="slaAgreement-checkboxGroup-RemindType" v-model="item.notify_type_list" @change="notifyTypeChange(item.notify_type_list, index)">
                         <bk-checkbox :value="'email'" style="margin-bottom: 12px">
                             {{$t('m.treeinfo["邮件"]')}}
                         </bk-checkbox>
+                        <!-- <bk-checkbox v-for="notice in noticeType" :key="notice.id" :value="notice.typeName.toLowerCase()" style="margin-bottom: 12px">
+                            {{ notice.name }}
+                        </bk-checkbox> -->
                         <bk-checkbox :value="'weixin'">{{$t('m.treeinfo["企业微信"]')}}</bk-checkbox>
                         <bk-form-item
+                            data-test-id="slaAgreement-select-emailNotifyEventList"
                             class="cus-email"
                             v-if="item.notify_type_list.indexOf('email') !== -1"
                             :property="'email_notify'">
@@ -104,7 +109,7 @@
                                 size="small"
                                 :popover-width="150"
                                 searchable>
-                                <bk-option v-for="option in emailNotifyEventList"
+                                <bk-option v-for="option in notifyEventList['email']"
                                     :key="option.id"
                                     :id="option.id"
                                     :name="option.name">
@@ -112,11 +117,12 @@
                             </bk-select>
                         </bk-form-item>
                         <bk-form-item
+                            data-test-id="slaAgreement-select-weixinNotifyEventList"
                             class="cus-weixin"
                             v-if="item.notify_type_list.indexOf('weixin') !== -1"
                             :property="'weixin_notify'">
                             <bk-select :clearable="false" :placeholder="$t(`m.slaContent['请选择通知事件']`)" size="small" v-model="item.weixin_notify" searchable>
-                                <bk-option v-for="option in weixinNotifyEventList"
+                                <bk-option v-for="option in notifyEventList['weixin']"
                                     :key="option.id"
                                     :id="option.id"
                                     :name="option.name">
@@ -129,12 +135,12 @@
             </li>
             <!-- 提醒频率 -->
             <li style="width: calc(36% - 35px);" class="bk-priority-normal bk-editor-style bk-none-radius bk-remind-radio" v-if="!item.hasCheckBox || hasCheckBox">
-                <bk-radio-group v-model="item.notify_rule">
+                <bk-radio-group data-test-id="slaAgreement-radio-notifyRule" v-model="item.notify_rule">
                     <bk-radio style="margin-bottom: 6px" :value="'once'">{{$t('m.slaContent["单次提醒"]')}}</bk-radio>
                     <bk-radio :value="'retry'">
                         {{$t('m.slaContent["递增首次提醒后，耗时每增加"]')}}
                         <span class="bk-border-bottom">
-                            <input @change="notifyFreqChange(item.notify_freq, index)" type="number" v-model.number="item.notify_freq">
+                            <input data-test-id="slaAgreement-radio-notifyFreq" @change="notifyFreqChange(item.notify_freq, index)" type="number" v-model.number="item.notify_freq">
                         </span>
                         <span class="freq-unit">
                             <bk-dropdown-menu class="group-text"
@@ -151,7 +157,7 @@
                                 </bk-button>
                                 <ul class="bk-dropdown-list" slot="dropdown-content">
                                     <li v-for="(time, timeIndex) in timeList" :key="timeIndex">
-                                        <a href="javascript:;" @click="timeHandler(time, item, index)">{{ time.name }}</a>
+                                        <a href="javascript:;" :data-test-id="`slaAgreement-a-timeHandler-${timeIndex}`" @click="timeHandler(time, item, index)">{{ time.name }}</a>
                                     </li>
                                 </ul>
                             </bk-dropdown-menu>
@@ -166,6 +172,8 @@
 
 <script>
     import commonMix from '../../commonMix/common.js'
+    import { mapState } from 'vuex'
+
     export default {
         name: 'priorityConfigur',
         mixins: [commonMix],
@@ -176,16 +184,10 @@
                     return []
                 }
             },
-            emailNotifyEventList: {
-                type: Array,
+            notifyEventList: {
+                type: Object,
                 default () {
-                    return []
-                }
-            },
-            weixinNotifyEventList: {
-                type: Array,
-                default () {
-                    return []
+                    return {}
                 }
             },
             modelPriority: {
@@ -277,6 +279,11 @@
                 },
                 iconOffset: 75
             }
+        },
+        computed: {
+            ...mapState({
+                noticeType: state => state.common.configurInfo.notify_type
+            })
         },
         watch: {
             modelPriority () {

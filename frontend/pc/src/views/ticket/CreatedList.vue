@@ -27,7 +27,10 @@
                 class="advanced-search"
                 ref="advancedSearch"
                 :forms="searchForms"
+                :panel="type"
+                :search-result-list="searchResultList"
                 @search="handleSearch"
+                @deteleSearchResult="deteleSearchResult"
                 @clear="handleClearSearch"
                 @formChange="handleSearchFormChange">
                 <div class="slot-content">
@@ -231,11 +234,27 @@
                 evaluationTicketInfo: {}
             }
         },
+        computed: {
+            fromRouter () {
+                return `${this.$route.name}`
+            }
+        },
         methods: {
             // 打开满意度评价
             onOpenEvaluationTicketModal (row) {
                 this.$refs.evaluationModal.show()
                 this.evaluationTicketInfo = row
+            },
+            reCreateTicket (row) {
+                const { href } = this.$router.resolve({
+                    name: 'CreateTicket',
+                    query: {
+                        from: this.fromRouter,
+                        service_id: row.service_id,
+                        rc_ticket_id: row.id
+                    }
+                })
+                window.open(href, '_blank')
             }
         }
     }

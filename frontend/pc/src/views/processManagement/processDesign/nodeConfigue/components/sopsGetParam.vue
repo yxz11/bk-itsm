@@ -109,6 +109,7 @@
                             <bk-select
                                 :disabled="disabled || disabledRenderForm"
                                 :clearable="false"
+                                searchable
                                 :value="formData[scheme.tag_code].replace(/^\$\{/, '').replace(/\}$/, '')"
                                 @selected="onSelectVar($event, scheme)">
                                 <bk-option
@@ -199,13 +200,27 @@
                 default () {
                     return false
                 }
-            }
+            },
+            hookedVarList: Object,
+            isHook: {
+                type: Boolean,
+                default () {
+                    return true
+                }
+            },
+            isEdit: {
+                type: Boolean,
+                default () {
+                    return true
+                }
+            },
+            initFormDate: Object
         },
         data () {
             return {
                 disabled: false,
+                ticketDisable: false,
                 disabledRenderForm: false,
-                hookedVarList: {}, // 被勾选为引用的变量
                 // quoteVarsLoading: false,
                 configLoading: false,
                 quoteErrors: [], // 变量引用校验不同通过列表
@@ -215,9 +230,9 @@
                     showRequired: true,
                     showGroup: true,
                     showLabel: true,
-                    showHook: true,
+                    showHook: this.isHook,
                     showDesc: true,
-                    formEdit: !this.disabled && !this.disabledRenderForm
+                    formEdit: !this.disabled && !this.disabledRenderForm && this.isEdit
                 },
                 fieldList: [],
                 checkInfo: {
@@ -274,7 +289,13 @@
         },
         computed: {},
         watch: {
-            constants () {
+            constants: {
+                handler () {
+                    this.renderKey = new Date().getTime()
+                },
+                deep: true
+            },
+            isEdit () {
                 this.renderKey = new Date().getTime()
             }
         },
@@ -292,18 +313,21 @@
         },
         methods: {
             onHookChange (val, scheme) {
-                this.$set(this.hookedVarList, scheme.tag_code, val)
-                const constantItem = this.constants.filter(item => item.key === scheme.tag_code)
-                constantItem[0].is_quoted = val
+                this.$emit('onChangeHook', scheme.tag_code, val)
+                const constantItem = this.constants.find(item => item.key === scheme.tag_code)
+                constantItem.is_quoted = val
                 if (val) {
                     this.formData[scheme.tag_code] = ''
                 } else {
-                    this.formData[scheme.tag_code] = constantItem ? deepClone(this.constantDefaultValue[scheme.tag_code]) : ''
+                    this.formData[scheme.tag_code] = constantItem ? deepClone(this.constantDefaultValue[scheme.tag_code]) : this.initFormDate[scheme.tag_code].value
                     const index = this.quoteErrors.findIndex(item => item === scheme.tag_code)
                     if (index > -1) {
                         this.quoteErrors.splice(index, 1)
                     }
                 }
+            },
+            changeTicketformDisable (val) {
+                this.$set(this.$refs.renderForm.formOption, 'formEdit', val)
             },
             onSelectVar (val, scheme) {
                 this.formData[scheme.tag_code] = `\${${val}}`

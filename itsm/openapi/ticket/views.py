@@ -24,12 +24,8 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 import copy
-import traceback
-from functools import wraps
-
 from django.conf import settings
 from django.utils.decorators import method_decorator
-from django.utils.translation import ugettext as _
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -50,17 +46,22 @@ from itsm.component.constants import (
     APPROVE_RESULT,
     INVISIBLE,
     PROCESS_RUNNING,
+    FIELD_STATUS,
+    FIELD_PX_URGENCY,
+    FIELD_PY_IMPACT,
+    FIELD_TITLE,
 )
+from itsm.component.decorators import custom_apigw_required
 from itsm.component.drf import viewsets as component_viewsets
 from itsm.component.drf.mixins import ApiGatewayMixin
 from itsm.component.drf.pagination import OpenApiPageNumberPagination
 from itsm.component.exceptions import (
     OperateTicketError,
     ParamError,
-    ServerError,
     TicketNotFoundError,
+    CreateTicketError,
 )
-from itsm.component.utils.drf import format_validation_message
+from itsm.openapi.decorators import catch_openapi_exception
 from itsm.openapi.ticket.serializers import (
     TicketCreateSerializer,
     TicketListSerializer,
@@ -72,6 +73,10 @@ from itsm.openapi.ticket.serializers import (
     TicketStatusSerializer,
     TicketResultSerializer,
     TicketFilterSerializer,
+    ProceedApprovalSerializer,
+    CommentSerializer,
+    DynamicFieldSerializer,
+    TicketComplexLogsSerializer,
 )
 from itsm.openapi.ticket.validators import (
     openapi_operate_validate,
@@ -79,61 +84,21 @@ from itsm.openapi.ticket.validators import (
     openapi_unsuspend_validate,
 )
 from itsm.service.models import ServiceCatalog, Service
-from itsm.ticket.models import Ticket, TicketField, SignTask
+from itsm.ticket.models import (
+    Ticket,
+    TicketField,
+    SignTask,
+    TicketEventLog,
+    TicketComment,
+)
 from itsm.ticket.serializers import TicketList, TicketSerializer
 from itsm.ticket.tasks import start_pipeline
-from itsm.ticket.validators import terminate_validate, withdraw_validate
-
-
-def catch_ticket_operate_exception(view_func):
-    """单据处理接口的公共异常捕捉"""
-
-    # @wraps(view_func, assigned=available_attrs(view_func))
-    @wraps(view_func)
-    def __wrapper(self, request, *args, **kwargs):
-        try:
-            return view_func(self, request, *args, **kwargs)
-        except Ticket.DoesNotExist:
-            return Response(
-                {
-                    "result": False,
-                    "code": TicketNotFoundError.ERROR_CODE_INT,
-                    "data": None,
-                    "message": TicketNotFoundError.MESSAGE,
-                }
-            )
-        except ServerError as e:
-            # 捕捉drf序列化检验的自定义错误
-            return Response(
-                {
-                    "result": False,
-                    "code": e.code_int,
-                    "data": None,
-                    "message": e.message,
-                }
-            )
-        except ValidationError as e:
-            # 捕捉drf序列化检验原始错误
-            return Response(
-                {
-                    "result": False,
-                    "code": ParamError.ERROR_CODE_INT,
-                    "data": None,
-                    "message": format_validation_message(e),
-                }
-            )
-        except Exception as e:
-            logger.error(traceback.format_exc())
-            return Response(
-                {
-                    "result": False,
-                    "code": OperateTicketError.ERROR_CODE_INT,
-                    "data": None,
-                    "message": _("接口异常，请检查请求参数: {}").format(e),
-                }
-            )
-
-    return __wrapper
+from itsm.ticket.validators import (
+    terminate_validate,
+    withdraw_validate,
+    FieldSerializer,
+    edit_field_validate,
+)
 
 
 @method_decorator(login_exempt, name="dispatch")
@@ -157,6 +122,7 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
         return queryset
 
     @action(detail=False, methods=["get"], serializer_class=TicketStatusSerializer)
+    @custom_apigw_required
     def get_ticket_status(self, request):
         """
         单据状态，支持根据单据sn查询
@@ -177,6 +143,7 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
         return Response(self.serializer_class(ticket).data)
 
     @action(detail=False, methods=["post"], serializer_class=TicketResultSerializer)
+    @custom_apigw_required
     def ticket_approval_result(self, request):
         """
         单据状态，支持根据单据sn查询
@@ -199,6 +166,7 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
         return Response(self.serializer_class(tickets, many=True).data)
 
     @action(detail=False, methods=["post"], serializer_class=TicketListSerializer)
+    @custom_apigw_required
     def get_tickets(self, request):
         """
         获取单据列表
@@ -245,7 +213,105 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
+    @action(detail=False, methods=["post"])
+    def edit_field(self, request, *args, **kwargs):
+        """
+        单个修改字段值
+        """
+        form_data = []
+
+        def edit_field_tracker(field_instance, old):
+            """基础字段修改日志记录"""
+
+            new_data = copy.deepcopy(FieldSerializer(field_instance).data)
+            old_field_instance = copy.deepcopy(field_instance)
+            old_field_instance._value = old
+            old_data = copy.deepcopy(FieldSerializer(old_field_instance).data)
+            old_data.update({"value_status": "before"})
+            new_data.update({"value_status": "after"})
+            form_data.extend([old_data, new_data])
+
+        field = request.data.get("field")
+        ticket_id = request.data.get("ticket_id")
+
+        try:
+            ticket = Ticket.objects.get(id=ticket_id)
+        except Exception:
+            raise ValidationError("ticket_id = {} 对应的单据不存在！".format(ticket_id))
+
+        # 如果ticket当前状态为：已完成/已终止/已撤销，则无法修改字段
+        if ticket.current_status in ["FINISHED", "TERMINATED", "REVOKED"]:
+            raise ValidationError(
+                "current_status = {} 当前状态不可修改字段！".format(ticket.current_status)
+            )
+
+        validate_data, field_obj = edit_field_validate(
+            field, service=ticket.service_type
+        )
+        field_value = validate_data["value"]
+
+        update_data = {"_value": field_value}
+        if validate_data.get("choice"):
+            update_data.update(choice=validate_data["choice"])
+
+        old_value = field_obj.value
+
+        ticket.fields.filter(key=field_obj.key).update(**update_data)
+
+        field_obj.refresh_from_db()
+
+        # 公共字段修改记录
+        edit_field_tracker(field_obj, old_value)
+
+        # 修改了紧急程度或影响范围，重新计算优先级
+        if field_obj.key in [FIELD_PX_URGENCY, FIELD_PY_IMPACT]:
+            impact = urgency = None
+            if field_obj.key == FIELD_PX_URGENCY:
+                urgency = field_value
+            elif field_obj.key == FIELD_PY_IMPACT:
+                impact = field_value
+
+            priority_data = ticket.update_priority(urgency, impact)
+            if priority_data:
+                # 存在优先级修改记录的时候才进行跟踪
+                edit_field_tracker(
+                    priority_data["instance"], priority_data["old_value"]
+                )
+
+            ticket.refresh_sla_task()
+
+        # 修改了工单状态
+        if field_obj.key == FIELD_STATUS and ticket.current_status != field_value:
+            if field_value in ticket.status_instance.to_over_status_keys:
+                # 如果是结束状态，直接结束
+                ticket.close(
+                    close_status=field_value,
+                    desc=request.data.get("desc"),
+                    operator=request.user.username,
+                )
+                return Response()
+            ticket.update_current_status(field_value)
+
+        # 修改了title，同步修改工单title
+        if field_obj.key == FIELD_TITLE:
+            ticket.title = field_value
+            ticket.save()
+
+        TicketEventLog.objects.create_log(
+            ticket,
+            0,
+            request.user.username,
+            "EDIT_FIELD",
+            message="{operator} 修改字段【{detail_message}】.",
+            detail_message=field_obj.name,
+            fields=form_data,
+            to_state_id=0,
+        )
+
+        return Response()
+
     @action(detail=False, methods=["get"], serializer_class=TicketRetrieveSerializer)
+    @custom_apigw_required
     def get_ticket_info(self, request):
         """
         获取单据详情
@@ -265,7 +331,8 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
 
         return Response(self.serializer_class(ticket).data)
 
-    @action(detail=False, methods=["get"], serializer_class=TicketLogsSerializer)
+    @action(detail=False, methods=["get"])
+    @custom_apigw_required
     def get_ticket_logs(self, request):
         """
         获取单据日志
@@ -283,10 +350,16 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
                 }
             )
 
-        return Response(self.serializer_class(ticket).data)
+        show_type = request.query_params.get("show_type", "simple")
+        serializer_class = TicketLogsSerializer
+        if show_type == "complex":
+            serializer_class = TicketComplexLogsSerializer
+
+        return Response(serializer_class(ticket).data)
 
     @action(detail=False, methods=["post"])
-    @catch_ticket_operate_exception
+    @catch_openapi_exception
+    @custom_apigw_required
     def create_ticket(self, request):
         """
         创建单据
@@ -295,6 +368,7 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
         """
         # 创建单据
         data = copy.deepcopy(request.data)
+        logger.info("[openapi][create_ticket]-> 正在开始创建单据, request_data={}".format(data))
         fast_approval = data.pop("fast_approval", False)
         if fast_approval:
             data["catalog_id"] = ServiceCatalog.objects.get(
@@ -307,16 +381,44 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
         serializer = TicketCreateSerializer(data=data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         instance = serializer.save()
-        instance.do_after_create(
-            data["fields"], request.data.get("from_ticket_id", None)
+
+        dynamic_fields = data.get("dynamic_fields", [])
+
+        if dynamic_fields:
+            ser = DynamicFieldSerializer(data=dynamic_fields, many=True)
+            ser.is_valid(raise_exception=True)
+            dynamic_fields = ser.data
+
+        try:
+            # 创建额外的全局字段
+            instance.create_dynamic_fields(dynamic_fields)
+            instance.do_after_create(
+                data["fields"], request.data.get("from_ticket_id", None)
+            )
+            start_pipeline.apply_async([instance])
+        except Exception as e:
+            logger.exception(
+                "[openapi][create_ticket]-> 单据创建失败， 错误原因 error={}".format(e)
+            )
+            instance.delete()
+            # 删除单据字段
+            keys = [field["key"] for field in dynamic_fields]
+            TicketField.objects.filter(ticket_id=instance.id, key__in=keys).delete()
+            raise CreateTicketError()
+
+        logger.info(
+            "[openapi][create_ticket]-> 单据创建成功，sn={}, request_data={}".format(
+                instance.sn, data
+            )
         )
-        start_pipeline.apply_async([instance])
+
         return Response(
             {"sn": instance.sn, "id": instance.id, "ticket_url": instance.pc_ticket_url}
         )
 
     @action(detail=False, methods=["post"])
-    @catch_ticket_operate_exception
+    @catch_openapi_exception
+    @custom_apigw_required
     def operate_node(self, request):
         """
         处理单据节点（提交、认领、派单、转单、终止）
@@ -375,7 +477,8 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
         return Response()
 
     @action(detail=False, methods=["post"])
-    @catch_ticket_operate_exception
+    @catch_openapi_exception
+    @custom_apigw_required
     def operate_ticket(self, request):
         """
         处理单据（挂起、恢复、撤销）
@@ -433,14 +536,30 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
         return Response()
 
     @action(detail=False, methods=["post"])
-    @catch_ticket_operate_exception
+    @catch_openapi_exception
     def proceed_approval(self, request):
         # 审批节点的处理
-        ticket_id = request.data.get("process_inst_id")
-        state_id = request.data.get("activity")
-        ticket = self.queryset.get(sn=ticket_id)
+        serializer = ProceedApprovalSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
 
-        node_fields = TicketField.objects.filter(state_id=state_id, ticket_id=ticket.id)
+        ticket_id = serializer.validated_data["process_inst_id"]
+        state_id = serializer.validated_data["activity"]
+        try:
+            ticket = Ticket.objects.get(sn=ticket_id)
+        except Exception:
+            raise ValidationError("process_inst_id = {} 对应的单据不存在！".format(ticket_id))
+        try:
+            node_fields = TicketField.objects.filter(
+                state_id=state_id, ticket_id=ticket.id
+            )
+        except Exception:
+            raise ValidationError(
+                "activity = {}, process_inst_id = {} 对应的表单字段不存在！".format(
+                    state_id, ticket_id
+                )
+            )
         fields = []
         remarked = False
         for field in node_fields:
@@ -451,7 +570,7 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
                         "key": field.key,
                         "type": field.type,
                         "choice": field.choice,
-                        "value": request.data.get("submit_action"),
+                        "value": serializer.validated_data["submit_action"],
                     }
                 )
             else:
@@ -462,7 +581,7 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
                             "key": field.key,
                             "type": field.type,
                             "choice": field.choice,
-                            "value": request.data.get("submit_opinion"),
+                            "value": serializer.validated_data["submit_opinion"],
                         }
                     )
                     remarked = True
@@ -471,13 +590,13 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
         node_status = ticket.node_status.get(state_id=state_id)
         SignTask.objects.update_or_create(
             status_id=node_status.id,
-            processor=request.data.get("handler"),
+            processor=serializer.validated_data["handler"],
             defaults={
                 "status": "RUNNING",
             },
         )
         res = ticket.activity_callback(
-            state_id, request.data.get("handler"), fields, API
+            state_id, serializer.validated_data["handler"], fields, API
         )
         if not res.result:
             logger.warning(
@@ -488,11 +607,28 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
             raise OperateTicketError(res.message)
         return Response()
 
+    @action(detail=False, methods=["post"])
+    @catch_openapi_exception
+    def proceed_fast_approval(self, request):
+        """
+        处理快速审批请求
+        """
+        if settings.RUN_VER == "ieod":
+            from platform_config.ieod.bkchat.utils import proceed_fast_approval
+        else:
+            from platform_config.open.bkchat.utils import proceed_fast_approval
+        return proceed_fast_approval(request)
+
     @action(detail=False, methods=["get"])
-    @catch_ticket_operate_exception
+    @catch_openapi_exception
+    @custom_apigw_required
     def get_tickets_by_user(self, request):
         # 初始化serializer的上下文
-        username = request.query_params.get("user", None)
+        username = (
+            request.query_params.get("username")
+            if request.query_params.get("username", None)
+            else request.query_params.get("user", None)
+        )
         if username is None:
             raise ParamError("user 为必填项")
         queryset = self.custom_filter_queryset(request, username)
@@ -510,7 +646,7 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
         return Response(data)
 
     @action(detail=False, methods=["post"], url_path="token/verify")
-    @catch_ticket_operate_exception
+    @catch_openapi_exception
     def verify(self, request):
         token = request.data.get("token", "")
         message = settings.APP_CODE + "_" + settings.SECRET_KEY
@@ -522,7 +658,45 @@ class TicketViewSet(ApiGatewayMixin, component_viewsets.ModelViewSet):
             }
         )
 
+    @action(
+        detail=False,
+        methods=["post"],
+    )
+    @catch_openapi_exception
+    @custom_apigw_required
+    def comment(self, request, *args, **kwargs):
+        """新增评论"""
+        ser = CommentSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.data
+        ticket_comment = TicketComment.objects.get(ticket_id=data["ticket_id"])
+        ticket_comment.stars = data["stars"]
+        ticket_comment.comments = data["comments"]
+        ticket_comment.source = "API"
+        ticket_comment.save()
+        ticket_comment.creator = data["operator"]
+        return Response()
+
     @action(detail=False, methods=["get"])
-    @catch_ticket_operate_exception
+    @catch_openapi_exception
+    @custom_apigw_required
     def callback_failed_ticket(self, request):
         return Response(Cache().hkeys("callback_error_ticket"))
+
+    @action(detail=False, methods=["post"])
+    @catch_openapi_exception
+    @custom_apigw_required
+    def add_follower(self, request, *args, **kwargs):
+        """关注or取关"""
+        sn = request.data.get("sn")
+        user = request.data.get("user")
+        try:
+            ticket = Ticket.objects.get(sn=sn)
+        except Ticket.DoesNotExist:
+            raise ParamError("sn[{}]对应的单据不存在！".format(sn))
+        attention = request.data.get("attention")
+        if attention:
+            ticket.add_follower(user)
+        else:
+            ticket.delete_follower(user)
+        return Response()

@@ -31,9 +31,9 @@
         <div class="itsm-page-content">
             <!-- tab -->
             <ul class="bk-notice-tab">
-                <li v-for="(item, index) in remindWayList"
-                    :key="item.id"
-                    :class="{ 'bk-check-notice': checkId === item.id }"
+                <li v-for="(item, index) in noticeType"
+                    :key="item.typeName"
+                    :class="{ 'bk-check-notice': checkId === item.typeName }"
                     @click="changeNotice(item, index)">
                     <span>{{ item.name }}</span>
                 </li>
@@ -68,9 +68,12 @@
             <bk-sideslider
                 :is-show.sync="noticeInfo.show"
                 :title="noticeInfo.title"
+                :quick-close="true"
+                :before-close="closeSideslider"
                 :width="noticeInfo.width">
                 <div slot="content" style="padding: 20px 34px;" v-if="noticeInfo.show">
                     <editor-notice
+                        ref="editorNotice"
                         :check-id="checkId"
                         :notice-info="noticeInfo.formInfo"
                         @closeEditor="closeEditor">
@@ -85,6 +88,7 @@
     import { errorHandler } from '../../../utils/errorHandler'
     import editorNotice from './editorNotice.vue'
     import permission from '@/mixins/permission.js'
+    import { mapState } from 'vuex'
 
     export default {
         name: 'noticeConfigure',
@@ -113,7 +117,11 @@
         computed: {
             sliderStatus () {
                 return this.$store.state.common.slideStatus
-            }
+            },
+            ...mapState({
+                noticeType: state => state.common.configurInfo.notify_type
+            })
+            
         },
         mounted () {
             this.getNoticeList()
@@ -134,7 +142,7 @@
                 })
             },
             changeNotice (item, index) {
-                this.checkId = item.id
+                this.checkId = item.typeName
                 this.getNoticeList()
             },
             editorInfo (item) {
@@ -147,6 +155,18 @@
             },
             closeEditor () {
                 this.noticeInfo.show = false
+            },
+            closeSideslider () {
+                this.$bkInfo({
+                    title: this.$t('m["内容未保存，离开将取消操作！"]'),
+                    confirmLoading: true,
+                    confirmFn: () => {
+                        this.noticeInfo.show = false
+                    },
+                    cancelFn: () => {
+                        this.noticeInfo.show = true
+                    }
+                })
             }
         }
     }
@@ -158,26 +178,27 @@
 
     .bk-notice-tab {
         @include clearfix;
-        border-bottom: 1px solid #DDE4EB;
-        margin-bottom: 10px;
-
+        border-bottom: 1px solid #dde4eb;
+        margin: -20px -20px 20px;
+        padding: 0 20px;
+        background-color: #ffffff;
         li {
             float: left;
             padding: 0 10px;
             line-height: 46px;
             text-align: center;
-            color: #63656E;
+            color: #63656e;
             cursor: pointer;
             font-size: 14px;
 
             &:hover {
-                color: #3A84FF;
+                color: #3a84ff;
             }
         }
 
         .bk-check-notice {
-            border-bottom: 2px solid #3A84FF;
-            color: #3A84FF;
+            border-bottom: 2px solid #3a84ff;
+            color: #3a84ff;
         }
     }
     .bk-table-permission {
@@ -189,7 +210,7 @@
         min-height: 200px;
 
         .bk-lable-primary {
-            color: #3A84FF;
+            color: #3a84ff;
             cursor: pointer;
         }
     }

@@ -191,6 +191,7 @@
     import LineChart from './components/lineChart.vue'
     import BarChart from './components/barChart.vue'
     import PieChart from './components/pieChart.vue'
+    import i18n from '@/i18n/index.js'
 
     const FORMAT = 'YYYY-MM-DD'
 
@@ -203,19 +204,19 @@
         },
         {
             key: 'service_name',
-            name: '服务名称',
+            name: i18n.t(`m['服务名称']`),
             link: true,
             handler (data) {
-                this.$router.push({ name: 'OperationService', params: { id: data.service_id } })
+                this.$router.push({ name: this.$route.query.project_id ? 'projectOperationService' : 'OperationService', params: { id: data.service_id }, query: { project_id: this.$route.query.project_id } })
             }
         },
         {
             key: 'category',
-            name: '服务类型'
+            name: i18n.t(`m['服务类型']`)
         },
         {
             key: 'count',
-            name: '单量（占比）',
+            name: i18n.t(`m['单量（占比）']`),
             sort: true,
             align: 'right',
             format (data) {
@@ -224,14 +225,14 @@
         },
         {
             key: 'creator_count',
-            name: '用户数',
+            name: i18n.t(`m['用户数']`),
             sort: true,
             align: 'right',
             width: 100
         },
         {
             key: 'biz_count',
-            name: '业务使用数',
+            name: i18n.t(`m['业务使用数']`),
             sort: true,
             align: 'right',
             width: 110
@@ -246,17 +247,17 @@
         },
         {
             key: 'bk_biz_name',
-            name: '业务名'
+            name: i18n.t(`m['业务名']`)
         },
         {
             key: 'service_count',
-            name: '使用服务数量',
+            name: i18n.t(`m['使用服务数量']`),
             sort: true,
             align: 'right'
         },
         {
             key: 'count',
-            name: '单量',
+            name: i18n.t(`m['单量']`),
             sort: true,
             align: 'right',
             width: 120
@@ -271,16 +272,16 @@
         },
         {
             key: 'creator',
-            name: '用户ID',
+            name: i18n.t(`m['用户ID']`),
             width: 120
         },
         {
             key: 'organization',
-            name: '所在组织'
+            name: i18n.t(`m['所在组织']`)
         },
         {
             key: 'count',
-            name: '提单量',
+            name: i18n.t(`m['提单量']`),
             colorMark: true,
             align: 'right',
             width: 120
@@ -288,10 +289,10 @@
     ]
 
     const STATUS_MAP = {
-        'RUNNING': '进行中',
-        'FINISHED': '已完成',
-        'REVOKED': '已撤销',
-        'TERMINATED': '已终止'
+        'RUNNING': i18n.t(`m['进行中']`),
+        'FINISHED': i18n.t(`m['已完成']`),
+        'REVOKED': i18n.t(`m['已撤销']`),
+        'TERMINATED': i18n.t(`m['已终止']`)
     }
 
     export default {
@@ -376,7 +377,7 @@
                 },
                 shortcuts: [
                     {
-                        text: '今天',
+                        text: this.$t(`m['今天']`),
                         value () {
                             const end = dayjs().format(FORMAT)
                             const start = dayjs().format(FORMAT)
@@ -384,7 +385,7 @@
                         }
                     },
                     {
-                        text: '昨天',
+                        text: this.$t(`m['昨天']`),
                         value () {
                             const end = dayjs().format(FORMAT)
                             const start = dayjs().subtract(1, 'day').format(FORMAT)
@@ -392,7 +393,7 @@
                         }
                     },
                     {
-                        text: '前天',
+                        text: this.$t(`m['前天']`),
                         value () {
                             const end = dayjs().format(FORMAT)
                             const start = dayjs().subtract(2, 'day').format(FORMAT)
@@ -400,7 +401,7 @@
                         }
                     },
                     {
-                        text: '一周前',
+                        text: this.$t(`m['一周前']`),
                         value () {
                             const end = dayjs().format(FORMAT)
                             const start = dayjs().subtract(1, 'week').format(FORMAT)
@@ -408,7 +409,7 @@
                         }
                     },
                     {
-                        text: '一个月前',
+                        text: this.$t(`m['一个月前']`),
                         value () {
                             const end = dayjs().format(FORMAT)
                             const start = dayjs().subtract(1, 'month').format(FORMAT)
@@ -416,7 +417,7 @@
                         }
                     },
                     {
-                        text: '三个月前',
+                        text: this.$t(`m['三个月前']`),
                         value () {
                             const end = dayjs().format(FORMAT)
                             const start = dayjs().subtract(3, 'month').format(FORMAT)
@@ -424,7 +425,7 @@
                         }
                     },
                     {
-                        text: '半年前',
+                        text: this.$t(`m['半年前']`),
                         value () {
                             const end = dayjs().format(FORMAT)
                             const start = dayjs().subtract(6, 'month').format(FORMAT)
@@ -432,7 +433,7 @@
                         }
                     },
                     {
-                        text: '一年前',
+                        text: this.$t(`m['一年前']`),
                         value () {
                             const end = dayjs().format(FORMAT)
                             const start = dayjs().subtract(1, 'year').format(FORMAT)
@@ -453,7 +454,8 @@
                     addedTicket: false,
                     addedUser: false,
                     addedService: false
-                }
+                },
+                project_key: this.$route.query.project_id || undefined
             }
         },
         created () {
@@ -485,9 +487,12 @@
             async getSummaryData () {
                 this.loading.summary = true
                 try {
+                    const params = {
+                        project_key: this.project_key
+                    }
                     const resp = await Promise.all([
-                        this.$store.dispatch('operation/getSummaryTotalData'),
-                        this.$store.dispatch('operation/getSummaryWeekData')
+                        this.$store.dispatch('operation/getSummaryTotalData', params),
+                        this.$store.dispatch('operation/getSummaryWeekData', params)
                     ])
                     this.summaryData = {
                         total: resp[0].data,
@@ -503,7 +508,10 @@
             async getBizList () {
                 this.loading.bizList = true
                 try {
-                    const resp = await this.$store.dispatch('eventType/getAppList')
+                    const params = {
+                        project_key: this.project_key
+                    }
+                    const resp = await this.$store.dispatch('eventType/getAppList', params)
                     this.bizList = resp.data
                 } catch (e) {
                     console.error(e)
@@ -516,6 +524,7 @@
                 this.loading.serviceUse = true
                 try {
                     const params = {
+                        project_key: this.project_key,
                         create_at__gte: this.dateRange[0],
                         create_at__lte: this.dateRange[1],
                         page: this.serviceTablePagination.current,
@@ -536,6 +545,7 @@
                 this.loading.bizUse = true
                 try {
                     const params = {
+                        project_key: this.project_key,
                         create_at__gte: this.dateRange[0],
                         create_at__lte: this.dateRange[1],
                         page: this.bizTablePagination.current,
@@ -556,6 +566,7 @@
                 this.loading.ticketClassify = true
                 try {
                     const params = {
+                        project_key: this.project_key,
                         create_at__gte: this.dateRange[0],
                         create_at__lte: this.dateRange[1]
                     }
@@ -581,6 +592,7 @@
                 this.loading.ticketStatus = true
                 try {
                     const params = {
+                        project_key: this.project_key,
                         create_at__gte: this.dateRange[0],
                         create_at__lte: this.dateRange[1]
                     }
@@ -606,6 +618,7 @@
                 this.loading.creator = true
                 try {
                     const params = {
+                        project_key: this.project_key,
                         create_at__gte: this.dateRange[0],
                         create_at__lte: this.dateRange[1],
                         timedelta: this.creatorChartDismension,
@@ -633,6 +646,7 @@
                 this.loading.top10CreateTicketUser = true
                 try {
                     const params = {
+                        project_key: this.project_key,
                         create_at__gte: this.dateRange[0],
                         create_at__lte: this.dateRange[1]
                     }
@@ -659,6 +673,7 @@
                 this.loading.top10TicketOrganization = true
                 try {
                     const params = {
+                        project_key: this.project_key,
                         create_at__gte: this.dateRange[0],
                         create_at__lte: this.dateRange[1]
                     }
@@ -684,6 +699,7 @@
                 this.loading.addedTicket = true
                 try {
                     const params = {
+                        project_key: this.project_key,
                         create_at__gte: this.dateRange[0],
                         create_at__lte: this.dateRange[1],
                         timedelta: this.addedTicketChartDismension,
@@ -711,6 +727,7 @@
                 this.loading.addedUser = true
                 try {
                     const params = {
+                        project_key: this.project_key,
                         create_at__gte: this.dateRange[0],
                         create_at__lte: this.dateRange[1],
                         timedelta: this.addedUserChartDismension,
@@ -738,6 +755,7 @@
                 this.loading.addedService = true
                 try {
                     const params = {
+                        project_key: this.project_key,
                         create_at__gte: this.dateRange[0],
                         create_at__lte: this.dateRange[1],
                         timedelta: this.addedServiceChartDismension,
@@ -847,7 +865,7 @@
         top: 158px;
         right: 0;
         padding: 10px 20px 10px;
-        z-index: 1003;
+        z-index: 100;
         .bk-date-picker {
             float: right;
             width: 360px;

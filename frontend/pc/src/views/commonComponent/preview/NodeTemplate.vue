@@ -111,7 +111,9 @@
                     { type: 'ROUTER', iconStyle: 'icon-icon-person' },
                     { type: 'TASK', iconStyle: 'icon-api-icon' },
                     { type: 'TASK-SOPS', iconStyle: 'icon-task-node' },
+                    { type: 'TASK-DEVOPS', iconStyle: 'icon-devops-task-icon' },
                     { type: 'SIGN', iconStyle: 'icon-sign-node-white' },
+                    { type: 'WEBHOOK', iconStyle: 'icon-webhook-2' },
                     { type: 'APPROVAL', iconStyle: 'icon-approval-node' }
                 ]
             }

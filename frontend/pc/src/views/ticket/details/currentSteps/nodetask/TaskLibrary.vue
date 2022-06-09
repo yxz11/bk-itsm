@@ -72,12 +72,13 @@
                 {{ $t(`m.systemConfig['确认']`) }}
             </bk-button>
             <bk-button class="mr10" @click="$emit('close')">
-                {{ $t(`m.common['取消']`) }}
+                {{ $t(`m.['取消']`) }}
             </bk-button>
         </div>
         <bk-sideslider
             :is-show.sync="viewTaskInfo.show"
             :width="800"
+            :quick-close="true"
             :title="$t(`m.task['查看任务']`)">
             <div slot="content" class="view-task-sideslider">
                 <bk-form :ext-cls="'mb10'"

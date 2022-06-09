@@ -30,7 +30,7 @@
             </div>
             <div class="itsm-page-content">
                 <empty-tip
-                    v-if="!isDataLoading && pagination.count === 0"
+                    v-if="!isDataLoading && pagination.count === 0 && searchToggle"
                     :title="emptyTip.title"
                     :sub-title="emptyTip.subTitle"
                     :desc="emptyTip.desc"
@@ -156,7 +156,7 @@
                             <template slot-scope="props">
                                 <!-- 编辑 -->
                                 <bk-button
-                                    data-test-id="sla_button_agreementEditFromOperate"
+                                    data-test-id="sla_button_agreementEditFromOperate1"
                                     v-if="!hasPermission(['sla_agreement_edit'], [...$store.state.project.projectAuthActions, ...props.row.auth_actions])"
                                     v-cursor
                                     text
@@ -166,7 +166,7 @@
                                     {{ $t('m.deployPage["编辑"]')}}
                                 </bk-button>
                                 <bk-button
-                                    data-test-id="sla_button_agreementEditFromOperate"
+                                    data-test-id="sla_button_agreementEditFromOperate2"
                                     v-else
                                     theme="primary"
                                     text
@@ -208,8 +208,7 @@
             v-else
             :model-list="modelList"
             :model-priority="modelPriority"
-            :email-notify-event-list="emailNotifyEventList"
-            :weixin-notify-event-list="weixinNotifyEventList"
+            :notify-event-list="notifyEventList"
             :change-info="changeInfo">
         </add-agreement>
     </div>
@@ -221,6 +220,7 @@
     import addAgreement from './newAddAgreement'
     import EmptyTip from '../project/components/emptyTip.vue'
     import permission from '@/mixins/permission.js'
+    import { mapState } from 'vuex'
 
     export default {
         name: 'agreement',
@@ -272,6 +272,8 @@
                         ]
                     }
                 ],
+                searchToggle: false,
+                notifyEventList: {},
                 emailNotifyEventList: [],
                 weixinNotifyEventList: [],
                 // 服务模式
@@ -311,15 +313,23 @@
         computed: {
             sliderStatus () {
                 return this.$store.state.common.slideStatus
-            }
+            },
+            ...mapState({
+                noticeType: state => state.common.configurInfo.notify_type
+            })
         },
         mounted () {
             this.getList(1)
             this.getModelList()
             this.getTicketHighlight()
             this.getModelPriority()
-            this.getNoticeList('EMAIL')
-            this.getNoticeList('WEIXIN')
+            // this.getNoticeList('EMAIL')
+            // this.getNoticeList('WEIXIN')
+            // this.getNoticeList('VOICE')
+            // console.log(this.noticeType)
+            this.noticeType.forEach(item => {
+                this.getNoticeList(item.typeName)
+            })
             if (this.$route.query.key === 'create') {
                 let itemObj = {}
                 if ('item' in this.$route.query) itemObj = JSON.parse(this.$route.query.item)
@@ -344,6 +354,7 @@
                 this.isDataLoading = true
                 this.$store.dispatch('slaManagement/getProtocolsList', { params }).then((res) => {
                     this.dataList = res.data.items
+                    this.searchToggle = res.data.items.length !== 0
                     // 分页
                     this.pagination.current = res.data.page
                     this.pagination.count = res.data.count
@@ -362,9 +373,10 @@
                     used_by: 'SLA'
                 }
                 this.$store.dispatch('noticeConfigure/getNoticeList', { params }).then((res) => {
-                    this[checkIdL + 'NotifyEventList'] = res.data.map(item => {
+                    const list = res.data.map(item => {
                         return { id: item.id, name: item.action_name }
                     })
+                    this.$set(this.notifyEventList, checkIdL, list)
                 }).catch((res) => {
                     errorHandler(res, this)
                 }).finally(() => {

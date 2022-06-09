@@ -92,6 +92,26 @@ class FieldVariablesSerializer(serializers.ModelSerializer):
         return data
 
 
+class FieldVariablesGroupSerializer(FieldVariablesSerializer):
+    def to_representation(self, instance):
+        data = super(FieldVariablesSerializer, self).to_representation(instance)
+        if data.get("source", TABLE) == TABLE:
+            state_name = _("基础模型")
+            name = "{}".format(data["name"])
+        else:
+            state_name = instance.state.name if instance.state.name else _("当前节点")
+            name = "{}".format(data["name"])
+        data.setdefault("id", instance.id)
+        data.setdefault("state", state_name)
+        data["source"] = "field"
+        data.update({"name": name})
+        if data["source_type"] == "API" and data["api_instance_id"]:
+            api_instance = RemoteApiInstance.objects.get(id=data["api_instance_id"])
+            data["api_info"] = ApiInstanceSerializer(api_instance).data
+
+        return data
+
+
 class TemplateFieldSerializer(AuthModelSerializer):
     """字段库序列化"""
 
@@ -368,7 +388,10 @@ class FieldSerializer(TemplateFieldSerializer):
         workflow = validated_data["workflow"]
         instance = super(FieldSerializer, self).create(validated_data)
         with transaction.atomic():
-            if state.name == "提单" and validated_data["key"] == "bk_biz_id":
+            if (
+                workflow.first_state.id == state.id
+                and validated_data["key"] == "bk_biz_id"
+            ):
                 workflow.is_biz_needed = True
                 workflow.save()
             instance.state.fields.append(instance.pk)

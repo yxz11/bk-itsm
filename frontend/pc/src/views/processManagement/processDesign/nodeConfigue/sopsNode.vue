@@ -23,15 +23,25 @@
 <template>
     <div class="bk-basic-node" v-bkloading="{ isLoading: isLoading }">
         <basic-card :card-label="$t(`m.treeinfo['基本信息']`)">
-            <bk-form :label-width="150" :model="basicsFormData" ref="basicsForm" :rules="rules" :ext-cls="'bk-form'">
-                <bk-form-item :label="$t(`m.treeinfo['节点名称：']`)" :required="true" :property="'name'">
+            <bk-form data-test-id="service-form-sopsNode" :label-width="150" :model="basicsFormData" ref="basicsForm" :rules="rules" :ext-cls="'bk-form'" form-type="vertical">
+                <bk-form-item
+                    data-test-id="sopsNode-select-nodeName"
+                    :label="$t(`m.treeinfo['节点名称：']`)"
+                    error-display-type="normal"
+                    :required="true"
+                    :property="'name'">
                     <bk-input
                         :ext-cls="'bk-form-width'"
                         v-model="basicsFormData.name"
                         maxlength="120">
                     </bk-input>
                 </bk-form-item>
-                <bk-form-item :label="$t(`m['流程类型：']`)" :required="true" :property="'processType'">
+                <bk-form-item
+                    data-test-id="sopsNode-select-processType"
+                    error-display-type="normal"
+                    :label="$t(`m['流程类型：']`)"
+                    :required="true"
+                    :property="'processType'">
                     <bk-select
                         :ext-cls="'bk-form-width bk-form-display'"
                         v-model="basicsFormData.processType"
@@ -46,7 +56,7 @@
                         </bk-option>
                     </bk-select>
                 </bk-form-item>
-                <bk-form-item :label="$t(`m['关联业务：']`)" :required="true" :property="'projectId'">
+                <bk-form-item data-test-id="sopsNode-select-business" error-display-type="normal" :label="$t(`m['关联业务：']`)" :required="true" :property="'projectId'">
                     <bk-select
                         :ext-cls="'bk-form-width bk-form-display'"
                         v-model="basicsFormData.projectId"
@@ -60,10 +70,11 @@
                             :key="project.bk_biz_id"
                             :id="project.bk_biz_id"
                             :name="project.name">
+                            {{ project.name }}<span style="font-size: 12px; color: #ded6d7">&nbsp;&nbsp;{{ '(' + project.bk_biz_id + ')' }}</span>
                         </bk-option>
                     </bk-select>
                 </bk-form-item>
-                <bk-form-item :label="$t(`m['流程模板：']`)" :required="true" :property="'templateId'">
+                <bk-form-item data-test-id="sopsNode-select-processTemplate" :label="$t(`m['流程模板：']`)" error-display-type="normal" :required="true" :property="'templateId'">
                     <bk-select
                         :ext-cls="'bk-form-width bk-form-display'"
                         v-model="basicsFormData.templateId"
@@ -99,11 +110,24 @@
                         </bk-option>
                     </bk-select>
                 </bk-form-item>
+                <bk-form-item
+                    data-test-id="sopsnode-component-processor"
+                    :label="$t(`m.treeinfo['处理人：']`)"
+                    :required="true">
+                    <div @click="checkStatus.processors = false">
+                        <deal-person
+                            ref="processors"
+                            :value="processorsInfo"
+                            :node-info="configur"
+                            :exclude-role-type-list="excludeProcessor">
+                        </deal-person>
+                    </div>
+                </bk-form-item>
             </bk-form>
-        </basic-card>
-        <basic-card class="mt20"
-            :card-label="$t(`m.treeinfo['输入参数']`)"
-            :card-desc="$t(`m.treeinfo['调用该API需要传递的参数信息']`)">
+            <div class="sops-params-title">
+                <p>{{ $t(`m.treeinfo['输入参数']`) }}:</p>
+                <p>{{ $t(`m.treeinfo['调用该API需要传递的参数信息']`) }}</p>
+            </div>
             <div class="bk-param" v-bkloading="{ isLoading: sopsFormLoading }">
                 <sops-get-param
                     v-if="constants.length !== 0"
@@ -113,37 +137,46 @@
                     :state-list="stateList"
                     :fields="fieldList"
                     :context="context"
+                    :init-form-date="initFormDate"
                     :constants="constants"
+                    :hooked-var-list="hookedVarList"
                     :constant-default-value="constantDefaultValue"
                     :quote-vars="quoteVars"
-                    :flow-info="flowInfo">
+                    :flow-info="flowInfo"
+                    @onChangeHook="onChangeHook">
                 </sops-get-param>
                 <no-data v-else></no-data>
+                <common-trigger-list :origin="'state'"
+                    :node-type="configur.type"
+                    :source-id="flowInfo.id"
+                    :sender="configur.id"
+                    :table="flowInfo.table">
+                </common-trigger-list>
+                <div class="mt20" style="font-size: 0">
+                    <bk-button :theme="'primary'"
+                        data-test-id="sopsNode-button-submit"
+                        :title="$t(`m.treeinfo['确定']`)"
+                        :loading="secondClick"
+                        class="mr10"
+                        @click="submit">
+                        {{$t(`m.treeinfo['确定']`)}}
+                    </bk-button>
+                    <bk-button :theme="'default'"
+                        data-test-id="sopsNode-button-close"
+                        :title="$t(`m.treeinfo['取消']`)"
+                        class="mr10"
+                        @click="closeNode">
+                        {{$t(`m.treeinfo['取消']`)}}
+                    </bk-button>
+                </div>
             </div>
         </basic-card>
-        <common-trigger-list :origin="'state'"
-            :node-type="configur.type"
-            :source-id="flowInfo.id"
-            :sender="configur.id"
-            :table="flowInfo.table">
-        </common-trigger-list>
-        <div class="mt20" style="font-size: 0">
-            <bk-button :theme="'primary'"
-                :title="$t(`m.treeinfo['确定']`)"
-                class="mr10"
-                @click="submit">
-                {{$t(`m.treeinfo['确定']`)}}
-            </bk-button>
-            <bk-button :theme="'default'"
-                :title="$t(`m.treeinfo['取消']`)"
-                class="mr10"
-                @click="closeNode">
-                {{$t(`m.treeinfo['取消']`)}}
-            </bk-button>
-        </div>
+        <!-- <basic-card>
+        </basic-card> -->
     </div>
 </template>
 <script>
+    import dealPerson from './components/dealPerson.vue'
     import NoData from '../../../../components/common/NoData.vue'
     import sopsGetParam from './components/sopsGetParam.vue'
     import commonTriggerList from '../../taskTemplate/components/commonTriggerList'
@@ -152,12 +185,13 @@
     import { deepClone } from '@/utils/util.js'
 
     export default {
-        name: 'sopsNode',
+        name: 'sopsDevopsTask',
         components: {
             BasicCard,
             sopsGetParam,
             commonTriggerList,
-            NoData
+            NoData,
+            dealPerson
         },
         props: {
             // 流程信息
@@ -183,14 +217,17 @@
         },
         data () {
             return {
+                secondClick: false,
                 quoteVars: [],
+                hookedVarList: {},
                 constantDefaultValue: {},
                 basicsFormData: {
                     name: '',
                     templateId: '',
                     projectId: '',
                     planId: [],
-                    processType: ''
+                    processType: '',
+                    processors: []
                 },
                 processOptions: [
                     {
@@ -272,7 +309,17 @@
                             trigger: 'blur'
                         }
                     ]
-                }
+                },
+                checkStatus: {
+                    delivers: false,
+                    processors: false
+                },
+                excludeProcessor: [],
+                processorsInfo: {
+                    type: '',
+                    value: ''
+                },
+                initFormDate: {}
             }
         },
         computed: {
@@ -307,7 +354,12 @@
                     }
                     await this.getTemplateDetail(this.configur.extras.sops_info.template_id)
                     this.basicsFormData.templateId = this.configur.extras.sops_info.template_id
+                    this.processorsInfo = {
+                        type: this.configur.processors_type,
+                        value: this.configur.processors
+                    }
                 }
+                this.getExcludeRoleTypeList()
                 this.isLoading = false
             },
             // 获取common流程类型
@@ -360,10 +412,11 @@
                     this.context.project.id = this.template
                 }
                 this.constants = []
+                this.hookedVarList = {}
                 this.sopsFormLoading = true
                 this.basicsFormData.planId = []
                 await this.$store.dispatch('getTemplateDetail', params).then(res => {
-                    this.constants = res.data.constants
+                    this.processingVariables(res.data.constants)
                     this.optionalNodeIdList = res.data.all_ids || []
                     this.getTempaltePlanList(id)
                 }).catch(res => {
@@ -428,32 +481,57 @@
                 const template = this.templateList.find(item => item.id === this.basicsFormData.templateId)
                 try {
                     this.sopsFormLoading = true
+                    const isCommon = this.basicsFormData.processType === 'common'
                     const res = await this.$store.dispatch('taskFlow/getSopsPreview', {
                         bk_biz_id: template.bk_biz_id,
                         template_id: template.id,
                         exclude_task_nodes_id: this.excludeTaskNodesId
                     })
+                    this.initFormDate = deepClone(res.data.pipeline_tree.constants)
                     const constants = []
-                    for (const key in res.data.pipeline_tree.constants) {
-                        if (res.data.pipeline_tree.constants[key].show_type === 'show') {
-                            constants.push(res.data.pipeline_tree.constants[key])
-                        }
-                    }
-                    constants.forEach(item => {
-                        this.configur.extras.sops_info.constants.filter(ite => {
-                            if (item.key === ite.key) {
-                                item.value = ite.value
+                    if (!isCommon) {
+                        for (const key in res.data.pipeline_tree.constants) {
+                            if (res.data.pipeline_tree.constants[key].show_type === 'show') {
+                                constants.push(res.data.pipeline_tree.constants[key])
                             }
-                            this.constantDefaultValue[item.key] = deepClone(item.value)
-                        })
-                    })
-                    constants.sort((a, b) => a.index - b.index)
-                    this.constants = constants
+                        }
+                    } else {
+                        constants.push(...res)
+                    }
+                    this.processingVariables(constants)
                 } catch (e) {
                     console.error(e)
                 } finally {
                     this.sopsFormLoading = false
                 }
+            },
+            onChangeHook (key, value) {
+                this.hookedVarList[key] = value
+                const cur = this.constants.find(item => item.key === key)
+                const init = this.initFormDate[key]
+                this.$set(cur, 'value', init.value)
+            },
+            processingVariables (vars) {
+                const constants = vars
+                constants.sort((a, b) => a.index - b.index)
+                // 设置每个变量的hook
+                constants.map(item => {
+                    this.$set(this.hookedVarList, item.key, false)
+                })
+                if (this.configur.extras.hasOwnProperty('sops_info')) {
+                    constants.forEach(item => {
+                        const curConstant = this.configur.extras.sops_info.constants.find(ite => ite.key === item.key)
+                        if (!curConstant) return
+                        this.constantDefaultValue[item.key] = deepClone(curConstant.value)
+                        if (curConstant.is_quoted) {
+                            this.$set(this.hookedVarList, item.key, true)
+                            item.value = '${' + curConstant.value + '}'
+                        } else {
+                            item.value = curConstant.value
+                        }
+                    })
+                }
+                this.constants = constants
             },
             async getRelatedFields () {
                 const params = {
@@ -467,6 +545,29 @@
                     errorHandler(res, this)
                 }).finally(() => {
                 })
+            },
+            // 计算处理人类型需要排除的类型
+            getExcludeRoleTypeList () {
+                // 不显示的人员类型
+                let excludeProcessor = []
+                // 内置节点
+                if (this.configur.is_builtin) {
+                    excludeProcessor = ['BY_ASSIGNOR', 'STARTER', 'VARIABLE']
+                } else {
+                    excludeProcessor = ['OPEN']
+                }
+                // 是否使用权限中心角色
+                if (!this.flowInfo.is_iam_used) {
+                    // excludeProcessor.push('IAM')
+                }
+                // 处理场景如果不是'DISTRIBUTE_THEN_PROCESS' || 'DISTRIBUTE_THEN_CLAIM'，则去掉派单人指定
+                if (this.configur.distribute_type !== 'DISTRIBUTE_THEN_PROCESS' && this.configur.distribute_type !== 'DISTRIBUTE_THEN_CLAIM') {
+                    excludeProcessor.push('BY_ASSIGNOR')
+                }
+                if (!this.flowInfo.is_biz_needed) {
+                    excludeProcessor.push('CMDB')
+                }
+                this.excludeProcessor = [...['EMPTY', 'API'], ...excludeProcessor]
             },
             onClearProcess () {
                 if (this.basicsFormData.processType !== 'common') {
@@ -488,42 +589,46 @@
                 this.$parent.closeConfigur()
             },
             submit () {
+                // 处理人为空校验
+                if (this.$refs.processors && !this.$refs.processors.verifyValue()) {
+                    this.checkStatus.processors = true
+                }
                 if (this.$refs.getParam) {
                     this.renderFormValidate = this.$refs.getParam.getRenderFormValidate()
                 } else {
                     this.renderFormValidate = true
                 }
+                if (this.secondClick) {
+                    return
+                }
                 this.$refs.basicsForm.validate().then(_ => {
-                    if (this.renderFormValidate) {
+                    if (this.renderFormValidate && this.$refs.processors.verifyValue()) {
+                        this.secondClick = true
                         const formData = []
-                        this.biz.forEach(item => {
-                            const vt = item.source_type === 'custom' ? 'custom' : 'variable'
-                            const ite = {
-                                value: this.basicsFormData.projectId,
-                                name: item.name,
-                                key: item.key || 1,
-                                value_type: vt,
-                                type: item.custom_type
-                            }
-                            formData.push(ite)
-                        })
-                        const biz = formData.splice(0, 1)[0]
+                        const biz = {
+                            name: this.$t(`m.treeinfo["业务"]`),
+                            value: this.basicsFormData.projectId,
+                            key: 1,
+                            value_type: 'custom'
+                        }
                         this.constants.map(item => {
                             // renderForm的formData与constant匹配的key
                             const formKey = Object.keys(this.$refs.getParam.formData).filter(key => key === item.key)
-                            const vt = item.source_type === 'custom' ? 'custom' : 'variable'
                             const { name, key } = item
+                            const vt = this.hookedVarList[formKey] ? 'variable' : 'custom'
                             if (item.show_type === 'show') {
                                 const formTeamlate = {
-                                    value: this.$refs.getParam.formData[formKey],
+                                    value: this.hookedVarList[formKey] ? this.$refs.getParam.formData[formKey].slice(2, this.$refs.getParam.formData[formKey].length - 1) : this.$refs.getParam.formData[formKey],
                                     name,
                                     key: key || 1,
                                     value_type: vt,
-                                    type: item.custom_type
+                                    type: item.custom_type,
+                                    is_quoted: this.hookedVarList[formKey]
                                 }
                                 formData.push(formTeamlate)
                             }
                         })
+                        const { value: processors, type: processors_type } = this.$refs.processors.getValue()
                         const params = {
                             'extras': {
                                 'sops_info': {
@@ -534,6 +639,8 @@
                                     'template_source': this.basicsFormData.processType
                                 }
                             },
+                            'processors': processors || '',
+                            'processors_type': processors_type,
                             'is_draft': false,
                             'is_terminable': false,
                             'name': this.basicsFormData.name,
@@ -550,6 +657,7 @@
                         }, (res) => {
                             errorHandler(res, this)
                         }).finally(() => {
+                            this.secondClick = false
                         })
                     }
                 })
@@ -566,20 +674,38 @@
         background-color: #FAFBFD;
         overflow: auto;
         @include scroller;
+        /deep/ .common-section-card-label {
+            display: none;
+        }
+        /deep/ .common-section-card-body {
+            width: 100%;
+            padding: 20px;
+        }
+        /deep/ .bk-form-width {
+            width: 448px;
+        }
+        .sops-params-title {
+            margin-top: 20px;
+            font-size: 14px;
+            p:nth-child(1) {
+                color: #63656e;
+                margin-bottom: 4px;
+            }
+            p:nth-child(2) {
+                font-size: 12px;
+                color: #929397;
+            }
+        }
     }
     .bk-basic-info {
         padding-bottom: 20px;
         border-bottom: 1px solid #E9EDF1;
         margin-bottom: 20px;
     }
-    .bk-form {
-        width: 520px;
-    }
     .bk-form-width {
-        width: 340px;
+        width: 448px;
     }
     .bk-form-display {
-        float: left;
         margin-right: 10px;
     }
 </style>

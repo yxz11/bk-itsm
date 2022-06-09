@@ -81,6 +81,7 @@ from itsm.component.constants import (
     OPEN,
     GENERAL,
     ORGANIZATION,
+    FAST_APPROVAL_MESSAGE,
 )
 from itsm.component.constants.flow import EXPORT_SUPPORTED_TYPE
 from itsm.component.dlls.component import ComponentLibrary
@@ -142,6 +143,7 @@ from itsm.ticket.serializers import (
     UnmergeTicketsSerializer,
     RecentlyTicketFilterSerializer,
     TicketList,
+    TicketStateOperateExceptionSerializer,
 )
 from itsm.ticket.tasks import clone_pipeline, start_pipeline
 from itsm.ticket.utils import (
@@ -503,8 +505,16 @@ class TicketModelViewSet(ModelViewSet):
 
         sms_invite_validate(ticket, numbers, invitor)
 
-        # 发送逻辑
-        custom_notify = CustomNotice.objects.get(action=INVITE_OPERATE, notify_type=SMS)
+        try:
+            # 发送逻辑
+            custom_notify = CustomNotice.objects.get(
+                project_key=ticket.project_key, action=INVITE_OPERATE, notify_type=SMS
+            )
+        except CustomNotice.DoesNotExist:
+            custom_notify = CustomNotice.objects.get(
+                action=INVITE_OPERATE, notify_type=SMS, project_key="public"
+            )
+
         content_template = (
             custom_notify.title_template + "：" + custom_notify.content_template
         )
@@ -569,11 +579,15 @@ class TicketModelViewSet(ModelViewSet):
             action=ACTION_CHOICES_DICT.get(INVITE_OPERATE),
             today_date=datetime.datetime.today(),
         )
-
-        # 发送逻辑
-        custom_notify = CustomNotice.objects.get(
-            action=INVITE_OPERATE, notify_type=EMAIL
-        )
+        try:
+            # 发送逻辑
+            custom_notify = CustomNotice.objects.get(
+                action=INVITE_OPERATE, notify_type=EMAIL, project_key=ticket.project_key
+            )
+        except CustomNotice.DoesNotExist:
+            custom_notify = CustomNotice.objects.get(
+                action=INVITE_OPERATE, notify_type=EMAIL, project_key="public"
+            )
 
         ticket_url = ticket.ticket_url + "&token={token}&invite=email".format(
             token=code
@@ -694,10 +708,10 @@ class TicketModelViewSet(ModelViewSet):
             if not service_fields:
                 return []
 
-            started_states = [
-                service_inst.first_state_id
-                for service_inst in Service.objects.filter(id__in=service_fields.keys())
-            ]
+            # started_states = [
+            #     service_inst.first_state_id
+            #     for service_inst in Service.objects.filter(id__in=service_fields.keys())
+            # ]
 
             # 获取导出的所有字段内容 -- 当前的id如果较多，这里大量拉取，估计有点问题
             all_service_field_keys.append("bk_biz_id")
@@ -707,7 +721,7 @@ class TicketModelViewSet(ModelViewSet):
                         service_id__in=service_fields.keys()
                     ).values_list("id", flat=True),
                     type__in=EXPORT_SUPPORTED_TYPE,
-                    state_id__in=started_states,
+                    # state_id__in=started_states,
                     key__in=all_service_field_keys,
                 ),
                 many=True,
@@ -861,6 +875,8 @@ class TicketModelViewSet(ModelViewSet):
             request=request,
         )
         node_status = ticket.node_status.get(state_id=state_id)
+
+        # 单据审批新增事务控制
         if node_status.type in [SIGN_STATE, APPROVAL_STATE]:
             SignTask.objects.update_or_create(
                 status_id=node_status.id,
@@ -880,6 +896,7 @@ class TicketModelViewSet(ModelViewSet):
                 % (state_id, res.message)
             )
             ticket.node_status.filter(state_id=state_id).update(status=RUNNING)
+
         return Response(
             {
                 "code": ResponseCodeStatus.OK
@@ -1068,7 +1085,19 @@ class TicketModelViewSet(ModelViewSet):
         message = request.data.get("message") or Template(SUPERVISE_MESSAGE).render(
             **{"title": ticket.title}
         )
+        # 构造快速审批通知信息
+        fast_approval_message = FAST_APPROVAL_MESSAGE.format(
+            **ticket.get_fast_approval_message_params()
+        )
         for step in ticket.current_steps:
+            # 快速审批通知
+            ticket.notify_fast_approval(
+                step["state_id"],
+                step["processors"],
+                fast_approval_message,
+                action=SUPERVISE_OPERATE,
+                kwargs=kwargs,
+            )
             ticket.notify(
                 state_id=step["state_id"],
                 receivers=step["processors"],
@@ -1097,6 +1126,26 @@ class TicketModelViewSet(ModelViewSet):
         ticket = self.get_object()
 
         operate_serializer = TicketStateOperateSerializer(
+            request=request, ticket=ticket, operator=request.user.username
+        )
+        operate_serializer.is_valid(raise_exception=True)
+        data = operate_serializer.data
+
+        data["source"] = request.source
+        current_node = data["current_node"]
+        data["ticket"] = ticket
+        current_node.set_next_action(operator=request.user.username, **data)
+
+        return Response()
+
+    @action(detail=True, methods=["post"])
+    def exception_distribute(self, request, *args, **kwargs):
+        """
+        异常分派
+        """
+        ticket = self.get_object()
+
+        operate_serializer = TicketStateOperateExceptionSerializer(
             request=request, ticket=ticket, operator=request.user.username
         )
         operate_serializer.is_valid(raise_exception=True)
@@ -1782,6 +1831,54 @@ class TicketModelViewSet(ModelViewSet):
             for ticket in ticket_list
         }
         return Response(can_operate)
+
+    @action(detail=False, methods=["post"])
+    def get_filter_tickets(self, request, *args, **kwargs):
+        """
+        url: "/api/ticket/receipts/get_filter_tickets/?page_size=10&page=1&ordering=-create_at"
+        data: {
+            "project_key": "0",
+            "tab_conditions": {},
+            "extra_conditions": {}
+        }
+        """
+        queryset = self.filter_queryset(self.get_queryset())
+
+        # 1.按项目key进行筛选
+        project_key = request.data.get("project_key", None)
+        if project_key:
+            queryset = queryset.filter(project_key=project_key)
+
+        # 2.按tab自定义条件进行筛选
+        tab_filter = TicketFilterSerializer(data=request.data.get("tab_conditions"))
+        tab_filter.is_valid(raise_exception=True)
+        kwargs = tab_filter.validated_data
+        queryset = Ticket.objects.get_tickets(request.user.username, queryset, **kwargs)
+
+        # 3.在tab筛选的queryset基础上进行额外条件的筛选
+        extra_filter = TicketFilterSerializer(data=request.data.get("extra_conditions"))
+        extra_filter.is_valid(raise_exception=True)
+        extra_kwargs = extra_filter.validated_data
+        queryset = Ticket.objects.get_tickets(
+            request.user.username, queryset, **extra_kwargs
+        )
+
+        # 4.获取分页数据
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            data = TicketList(
+                page,
+                username=request.user.username,
+                token=request.query_params.get("token", ""),
+            ).to_client_representation()
+            return self.get_paginated_response(data)
+
+        data = TicketList(
+            queryset,
+            username=request.user.username,
+            token=request.query_params.get("token", ""),
+        ).to_client_representation()
+        return Response(data)
 
 
 class TicketStatusModelViewSet(component_viewsets.ReadOnlyModelViewSet):

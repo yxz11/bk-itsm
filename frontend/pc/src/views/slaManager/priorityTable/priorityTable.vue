@@ -39,9 +39,9 @@
                             }">
                             <div class="bk-form-content bk-check-info"
                                 v-if="priorityConten.editorStatus">
-                                <bk-checkbox :ext-cls="'cus-ellipsis'" :value="item.key" :title="item.name">{{item.name}}</bk-checkbox>
+                                <bk-checkbox :ext-cls="'cus-ellipsis'" :value="item.key" :title="item.name">{{ item.name }}</bk-checkbox>
                             </div>
-                            <span class="bk-normal-word" v-else>{{item.name}}</span>
+                            <span class="bk-normal-word" v-else>{{ item.name }}</span>
                         </li>
                     </ul>
                 </bk-checkbox-group>
@@ -62,9 +62,9 @@
                         }"
                         :class="{ 'bk-scope-none': index === degreeList.length - 1, 'bk-editor-el': priorityConten.editorStatus }">
                         <div class="bk-form-content" v-if="priorityConten.editorStatus">
-                            <bk-checkbox :ext-cls="'cus-ellipsis'" :value="item.key" :title="item.name">{{item.name}}</bk-checkbox>
+                            <bk-checkbox :ext-cls="'cus-ellipsis'" :value="item.key" :title="item.name">{{ item.name }}</bk-checkbox>
                         </div>
-                        <span class="bk-normal-word" v-else>{{item.name}}</span>
+                        <span class="bk-normal-word" v-else>{{ item.name }}</span>
                     </li>
                 </ul>
             </bk-checkbox-group>
@@ -92,7 +92,7 @@
                                                 <span
                                                     :style="'display: inline-block; margin-right: 10px; width: 8px; height: 8px;background-color: ' + typeColorList[option.key]"
                                                 ></span>
-                                                <span>{{option.name}}</span>
+                                                <span>{{ option.name }}</span>
                                             </bk-option>
                                         </bk-select>
                                         <span class="in-select-icon" :style="'background-color: ' + typeColorList[contentItem.priority]"></span>
@@ -412,7 +412,7 @@
                 span {
                     position: absolute;
                     top: 50%;
-                    left: 50%;
+                    // left: 50%;
                     transform: translate(-50%, -50%);
                     width: calc(100% - 40px);
                     text-align: center;
