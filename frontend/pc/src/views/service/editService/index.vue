@@ -23,7 +23,7 @@
 <template>
     <div>
         <nav-title :show-icon="true"
-            :title-name="serviceInfo.name || $t(`m.serviceConfig['新建服务']`)"
+            :title-name="serviceInfo.name || $t(`m['新建服务']`)"
             @goBack="onBackIconClick">
             <div slot="step">
                 <bk-steps ext-cls="steps-icon"
@@ -207,6 +207,11 @@
                 this.isShowNodeConfig = val
             },
             onBackIconClick () {
+                // 进入节点配置 返回画布
+                if (this.$refs.serviceProcessStep && this.$refs.serviceProcessStep.isShowNodeConfig) {
+                    this.$refs.serviceProcessStep.isShowNodeConfig = false
+                    return
+                }
                 this.$router.push({
                     name: 'projectServiceList',
                     query: {

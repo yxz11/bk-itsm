@@ -256,17 +256,12 @@ class CatalogServiceViewSet(component_viewsets.ModelViewSet):
         if not catalog_services.exists():
             return Response([])
         service_ids = catalog_services.values_list("service_id", flat=True)
-        ordering = "FIELD(`id`, {})".format(
-            ",".join(["'{}'".format(v) for v in service_ids])
-        )
         query_params = dict(pk__in=service_ids)
         if is_valid is not None:
             query_params.update({"is_valid": is_valid})
         services = (
-            Service.objects.exclude(display_type=INVISIBLE)
-            .filter(**query_params)
-            .extra(select={"ordering": ordering}, order_by=["ordering"])
-        )
+            Service.objects.exclude(display_type=INVISIBLE).filter(**query_params)
+        ).order_by("-update_at")
 
         # 支持额外过滤选项
         if name:
@@ -275,11 +270,7 @@ class CatalogServiceViewSet(component_viewsets.ModelViewSet):
         if service_key and service_key != "globalview":
             services = services.filter(key=service_key)
 
-        # 服务展示过滤
-        conditions = Service.permission_filter(request.user.username)
-        services = services.filter(reduce(operator.or_, conditions)).order_by(
-            "-update_at"
-        )
+        services = services
         context = self.get_serializer_context()
         if request.query_params.get("page", "") and request.query_params.get(
             "page_size", ""
@@ -656,10 +647,17 @@ class ServiceViewSet(component_viewsets.AuthModelViewSet):
         )
 
     @action(detail=False, methods=["post"])
-    def import_service(self, request, *args, **kwargs):
-        data = request.data
+    def imports(self, request, *args, **kwargs):
+        data = json.loads(request.FILES.get("file").read())
+        project_key = request.data.get("project_key", data.get("project_key"))
+        data["project_key"] = project_key
+        if isinstance(data, list):
+            raise ParamError(_("2.5.9 版本之前的流程无法导入，请转换后在看，详情请看github"))
         ServiceImportSerializer(data=data).is_valid(raise_exception=True)
-        service = Service.objects.clone(data, request.user.username)
+        catalog_id = request.data.get("catalog_id")
+        service = Service.objects.clone(
+            data, request.user.username, catalog_id=catalog_id
+        )
         return Response(
             self.serializer_class(service, context=self.get_serializer_context()).data
         )

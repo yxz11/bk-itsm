@@ -25,6 +25,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 from business_rules.actions import BaseActions, rule_action
 from business_rules.fields import FIELD_NUMERIC, FIELD_TEXT
+from common.log import logger
 
 from itsm.component.constants import BACKEND
 from itsm.component.utils.lock import share_lock
@@ -70,7 +71,7 @@ class ResponseActions(BaseActions):
 
     @share_lock()
     def check_and_create(self, source_type, source_id, action, rule):
-        instance = Action.objects.filter(
+        action_count = Action.objects.filter(
             signal=self.trigger.signal,
             sender=self.trigger.sender,
             source_type=source_type,
@@ -78,16 +79,12 @@ class ResponseActions(BaseActions):
             schema_id=action.id,
             rule_id=rule.id,
             trigger_id=self.trigger.id,
-        ).first()
-        if instance is None:
-            instance = Action.objects.create(
-                signal=self.trigger.signal,
-                sender=self.trigger.sender,
-                context=self.context,
-                source_type=source_type,
-                source_id=source_id,
-                schema_id=action.id,
-                rule_id=rule.id,
-                trigger_id=self.trigger.id,
+        ).count()
+        logger.info(
+            "[check_and_create] source_type={}, source_id={}. action={}, rule={}, action_count={}".format(
+                source_type, source_id, action.id, rule.id, action_count
             )
-        return instance
+        )
+        if action_count == 0:
+            return True
+        return False

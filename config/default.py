@@ -28,6 +28,10 @@ from urllib.parse import urljoin
 
 from blueapps.conf.default_settings import *  # noqa
 from blueapps.conf.log import get_logging_config_dict
+from blueapps.opentelemetry.utils import inject_logging_trace_info
+from django.http import HttpResponseRedirect
+from django.urls import reverse
+
 from config import (
     APP_CODE,
     BASE_DIR,
@@ -36,7 +40,6 @@ from config import (
     BK_PAAS_HOST,
     BK_PAAS_INNER_HOST,
 )
-from itsm.monitor.opentelemetry.utils import inject_logging_trace_info
 
 # 标准运维页面服务地址
 SITE_URL_SOPS = "/o/bk_sops/"
@@ -64,7 +67,6 @@ INSTALLED_APPS += (
     "django_signal_valve",
     # itsm
     "itsm.gateway",
-    "itsm.helper",
     "itsm.role",
     "itsm.pipeline_plugins",
     "itsm.ticket",
@@ -88,7 +90,6 @@ INSTALLED_APPS += (
     "corsheaders",
     "django_filters",
     # "autofixture",
-    "requests_tracker",
     # wiki
     "django.contrib.humanize.apps.HumanizeConfig",
     "django_nyt.apps.DjangoNytConfig",
@@ -100,7 +101,10 @@ INSTALLED_APPS += (
     # 'flower',
     # 'monitors',
     "itsm.monitor",
+    "blueapps.opentelemetry.instrument_app",
 )
+
+INSTALLED_APPS = ("itsm.helper",) + INSTALLED_APPS
 
 # IAM 开启开关
 USE_IAM = True if os.getenv("USE_IAM", "true").lower() == "true" else False
@@ -111,11 +115,11 @@ if USE_IAM:
         "itsm.auth_iam",
     )
 
-
 # 这里是默认的中间件，大部分情况下，不需要改动
 # 如果你已经了解每个默认 MIDDLEWARE 的作用，确实需要去掉某些 MIDDLEWARE，或者改动先后顺序，请去掉下面的注释，然后修改
 MIDDLEWARE = (
     # 手动关闭服务中间件，需要到admin里设置key='SERVICE_SWITCH'这条数据的value
+    "itsm.component.misc_middlewares.HttpsMiddleware",
     "itsm.component.misc_middlewares.ServiceSwitchCheck",
     # api网关接口豁免
     "itsm.component.misc_middlewares.ApiIgnoreCheck",
@@ -150,10 +154,7 @@ MIDDLEWARE = (
     # 'itsm.component.misc_middlewares.NginxAuthProxy',
     "itsm.component.misc_middlewares.InstrumentProfilerMiddleware",
     # 'pyinstrument.middleware.ProfilerMiddleware',
-    "django_prometheus.middleware.PrometheusAfterMiddleware",
 )
-
-MIDDLEWARE = ("django_prometheus.middleware.PrometheusBeforeMiddleware",) + MIDDLEWARE
 
 # 所有环境的日志级别可以在这里配置
 # LOG_LEVEL = 'DEBUG'
@@ -204,7 +205,6 @@ inject_formatters = ("verbose",)
 # 日志中添加trace_id
 ENABLE_OTEL_TRACE = True if os.getenv("BKAPP_ENABLE_OTEL_TRACE", "0") == "1" else False
 if ENABLE_OTEL_TRACE:
-    INSTALLED_APPS += ("itsm.monitor.opentelemetry.instrument_app",)
     trace_format = "[trace_id]: %(otelTraceID)s [span_id]: %(otelSpanID)s [resource.service.name]: %(otelServiceName)s"
     inject_logging_trace_info(LOGGING, inject_formatters, trace_format)
 
@@ -268,7 +268,7 @@ if locals().get("DISABLED_APPS"):
 # Django 项目配置 - i18n
 # ==============================================================================
 TIME_ZONE = "Asia/Shanghai"
-LANGUAGE_CODE = os.environ.get("BKAPP_BACKEND_LANGUAGE", "zh_CN")
+LANGUAGE_CODE = os.environ.get("BKAPP_BACKEND_LANGUAGE", "zh-hans")
 SITE_ID = 1
 USE_I18N = True
 USE_L10N = True
@@ -799,7 +799,7 @@ WEIXIN_APP_EXTERNAL_SHARE_HOST = "{}weixin/".format(
 TICKET_NOTIFY_HOST = WEIXIN_APP_EXTERNAL_SHARE_HOST
 
 FILE_CHARSET = "utf-8"
-LANGUAGE_CODE = "zh-hans"
+# LANGUAGE_CODE = "zh-hans"
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 
 # celery允许接收的数据格式，可以是一个字符串，比如'json'
@@ -814,20 +814,6 @@ timezone = "Asia/Shanghai"
 
 CELERY_TIMEZONE = "Asia/Shanghai"
 USE_TZ = False
-# 蓝盾
-DEVOPS_CLIENT_URL = os.environ.get("DEVOPS_CLIENT_URL", "")
-DEVOPS_BASE_URL = os.environ.get("DEVOPS_BASE_URL", "")
-
-# bkchat快速审批
-USE_BKCHAT = True if os.getenv("USE_BKCHAT", "true").lower() == "true" else False
-if USE_BKCHAT:
-    BKCHAT_URL = os.environ.get("BKCHAT_URL", "")
-    BKCHAT_APPID = os.environ.get("BKCHAT_APPID", "")
-    BKCHAT_APPKEY = os.environ.get("BKCHAT_APPKEY", "")
-
-# show.py 敏感信息处理, 内部白皮书地址，内部登陆地址
-BK_IEOD_DOC_URL = os.environ.get("BK_IEOD_DOC_URL", "")
-BK_IEOD_LOGIN_URL = os.environ.get("BK_IEOD_LOGIN_URL", "")
 
 # 通知消息模版
 CONTENT_CREATOR_WITH_TRANSLATION = (
@@ -839,14 +825,44 @@ CONTENT_CREATOR_WITH_TRANSLATION = (
 # 系统api调用账户
 SYSTEM_USE_API_ACCOUNT = "admin"
 
-BLUEAPPS_ACCOUNT_LOGIN_URL = os.environ.get("BK_IEOD_LOGIN_URL", "")
-BLUEAPPS_ACCOUNT_LOGIN_PLAIN_URL = os.environ.get("BK_LOGIN_PLAIN_URL", "")
+# 蓝盾
+DEVOPS_CLIENT_URL = os.environ.get("DEVOPS_CLIENT_URL", "")
+DEVOPS_BASE_URL = os.environ.get("DEVOPS_BASE_URL", "")
 
-# init APIGW public_key
 api_public_key = os.environ.get("APIGW_PUBLIC_KEY", "")
 APIGW_PUBLIC_KEY = base64.b64decode(api_public_key)
+
+# show.py 敏感信息处理, 内部白皮书地址，内部登陆地址
+BK_IEOD_DOC_URL = os.environ.get("BK_IEOD_DOC_URL", "")
+BK_IEOD_LOGIN_URL = os.environ.get("BK_IEOD_LOGIN_URL", "")
 
 # itsm-tapd 网关API地址
 ITSM_TAPD_APIGW = os.environ.get("ITSM_TAPD_APIGW", "")
 # tapd 项目授权链接
 TAPD_OAUTH_URL = os.environ.get("TAPD_OAUTH_URL", "")
+
+# bkchat快速审批
+USE_BKCHAT = True if os.getenv("USE_BKCHAT", "true").lower() == "true" else False
+if USE_BKCHAT:
+    BKCHAT_URL = os.environ.get("BKCHAT_URL", "")
+    BKCHAT_APPID = os.environ.get("BKCHAT_APPID", "")
+    BKCHAT_APPKEY = os.environ.get("BKCHAT_APPKEY", "")
+
+
+def redirect_func(request):
+    login_page_url = reverse("account:login_page")
+    next_url = "{}?refer_url={}".format(login_page_url, request.path)
+    return HttpResponseRedirect(next_url)
+
+
+BLUEAPPS_PAGE_401_RESPONSE_FUNC = redirect_func
+
+try:
+    # 自动过单时间，默认为20
+    AUTO_APPROVE_TIME = int(os.environ.get("AUTO_APPROVE_TIME", 20))
+except Exception:
+    AUTO_APPROVE_TIME = 20
+
+OPEN_VOICE_NOTICE = (
+    True if os.getenv("BKAPP_OPEN_VOICE_NOTICE", "false").lower() == "true" else False
+)

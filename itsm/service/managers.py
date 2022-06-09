@@ -277,7 +277,7 @@ class ServiceManager(managers.Manager):
 
         return ver_for_service
 
-    def clone(self, tag_data, username):
+    def clone(self, tag_data, username, catalog_id=None):
         from itsm.workflow.models import Workflow
 
         def get_catalog_id(project_key):
@@ -295,7 +295,7 @@ class ServiceManager(managers.Manager):
             workflow_tag_data = tag_data.pop("workflow")
             workflow_tag_data["is_builtin"] = False
             task_settings = []
-            if workflow_tag_data["extras"].get("task_settings"):
+            if workflow_tag_data.get("extras", {}).get("task_settings"):
                 task_settings = workflow_tag_data["extras"].pop("task_settings")
             workflow, state_map, _ = Workflow.objects.clone(workflow_tag_data, username)
             self.clone_task_settings(workflow, task_settings, state_map)
@@ -306,7 +306,8 @@ class ServiceManager(managers.Manager):
             tag_data["creator"] = tag_data["updated_by"] = username
             service = self.create(**tag_data)
             project_key = tag_data["project_key"]
-            catalog_id = get_catalog_id(project_key=project_key)
+            if catalog_id is None:
+                catalog_id = get_catalog_id(project_key=project_key)
             service.bind_catalog(catalog_id, project_key)
             return service
         return None

@@ -107,10 +107,10 @@
                 </p>
             </div>
             <collapse-transition v-if="!readOnly">
-                <div class="bk-node-form" v-show="unfold && !isShowAssgin">
+                <div class="bk-node-form" v-show="unfold">
                     <!-- 禁用遮罩 -->
                     <div class="bk-node-disabled" v-if="nodeInfo.status === 'SUSPEND'"></div>
-                    <div class="bk-form bk-form-vertical">
+                    <div class="bk-form bk-form-vertical" v-if="hasNodeOptAuth">
                         <!-- 节点任务 -->
                         <node-task-list
                             v-if="(nodeInfo.can_create_task || nodeInfo.can_execute_task)"
@@ -119,7 +119,7 @@
                             @updateCurrentStep="successFn">
                         </node-task-list>
                         <sops-and-devops-task
-                            v-if="nodeInfo.status === 'FAILED' && (nodeInfo.type === 'TASK-SOPS' || nodeInfo.type === 'TASK-DEVOPS')"
+                            v-if="nodeInfo.status === 'FAILED' && (nodeInfo.type === 'TASK-SOPS' || nodeInfo.type === 'TASK-DEVOPS' || nodeInfo.type === 'WEBHOOK')"
                             :constants="constants"
                             :hooked-var-list="hookedVarList"
                             :node-info="nodeInfo"
@@ -221,7 +221,7 @@
                     </div>
                 </div>
             </collapse-transition>
-            <bk-button v-if="isShowAssgin" style="margin-left: 14px" @click="clickBtn({ can_operate: true, key: 'EXCEPTION_DISTRIBUTE' ,name: '异常分派' })">异常分派</bk-button>
+            <bk-button v-if="isShowAssgin && (nodeInfo.type === 'APPROVAL' || nodeInfo.type === 'NORMAL')" style="margin-left: 14px" @click="clickBtn({ can_operate: true, key: 'EXCEPTION_DISTRIBUTE' ,name: '异常分派' })">{{ $t(`m['异常分派']`) }}</bk-button>
         </div>
         <!-- 处理人 tips 内容 -->
         <div id="processor-tips-content" class="bk-processor-content">

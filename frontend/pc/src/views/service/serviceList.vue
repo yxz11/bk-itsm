@@ -47,6 +47,13 @@
                             {{$t(`m.serviceConfig['新增']`)}}
                         </bk-button>
                         <bk-button :theme="'default'"
+                            class="mr10"
+                            data-test-id="service_button_batchImportService"
+                            :title="$t(`m['导入']`)"
+                            @click="importService">
+                            {{$t(`m['导入']`)}}
+                        </bk-button>
+                        <bk-button :theme="'default'"
                             data-test-id="service_button_batchDeleteService"
                             :title="$t(`m.serviceConfig['批量删除']`)"
                             :disabled="!checkList.length"
@@ -130,14 +137,15 @@
                                 {{ props.row.name }}
                             </span>
                             <template v-else>
-                                <span
-                                    v-if="props.row.id !== changeFrom.name"
-                                    class="bk-lable-primary"
-                                    :title="props.row.name"
-                                    @click="changeEntry(props.row, 'edit')">
-                                    {{ props.row.name }}
+                                <div v-if="props.row.id !== changeFrom.name" class="bk-lable-display">
+                                    <span
+                                        class="bk-lable-primary"
+                                        :title="props.row.name"
+                                        @click="changeEntry(props.row, 'edit')">
+                                        {{ props.row.name }}
+                                    </span>
                                     <i v-show="tableHoverId === props.row.id" @click.stop="handleChange('name', props.row)" class="bk-itsm-icon icon-itsm-icon-six"></i>
-                                </span>
+                                </div>
                                 <div v-else class="hover-show-icon">
                                     <bk-input v-model="editValue"></bk-input>
                                     <div class="operation">
@@ -298,12 +306,55 @@
                                             {{ $t('m.serviceConfig["删除"]') }}
                                         </bk-button>
                                     </template>
+                                    <bk-button
+                                        style="font-size: 12px; display: block"
+                                        data-test-id="service_button_deleteService3"
+                                        theme="primary"
+                                        text
+                                        @click="exportService(props.row)">
+                                        {{ $t('m["导出"]') }}
+                                    </bk-button>
                                 </div>
                             </bk-popover>
                         </template>
                     </bk-table-column>
                 </bk-table>
             </div>
+            <bk-dialog
+                width="800"
+                v-model="isImportServiceShow"
+                :title="$t(`m['导入服务']`)"
+                theme="primary"
+                :auto-close="false"
+                :mask-close="false"
+                @confirm="importConfirm"
+                @cancel="closeImport">
+                <bk-form ref="importForm" id="importForm">
+                    <bk-form-item :label="$t(`m['选择目录']`)" required>
+                        <bk-cascade
+                            v-model="importCatalogId"
+                            :list="dirList"
+                            clearable
+                            :check-any-level="true"
+                            :ext-popover-cls="'custom-cls'"
+                            @change="handleChangeTree">
+                        </bk-cascade>
+                    </bk-form-item>
+                    <bk-form-item :label="$t(`m['选择文件']`)" required>
+                        <bk-button class="bk-btn-file" style="width: 100px">
+                            <input class="bk-input-file" type="file" ref="importInput" @change="handleFile" />
+                            {{ $t(`m['选择文件']`) }}
+                            <span class="bk-input-tip">{{ $t(`m['仅支持json文件！']`) }}</span>
+                        </bk-button>
+                    </bk-form-item>
+                    <template v-if="importFileNameList.length !== 0">
+                        <div class="file-list" v-for="(item, index) in importFileNameList" :key="index">{{ item }}
+                            <i class="bk-itsm-icon icon-itsm-icon-three-one" @click="closeFile"></i>
+                        </div>
+                    </template>
+                    <p v-if="isCheckImport" class="import-error-tip">{{ errorName }}为必选项!</p>
+                </bk-form>
+            </bk-dialog>
         </div>
     </div>
 </template>
@@ -333,6 +384,11 @@
                     node: {}
                 },
                 rules: {},
+                importCatalogId: [],
+                isCheckImport: false,
+                isHasFile: false,
+                importFileNameList: [],
+                errorName: '',
                 formData: {
                     name: '',
                     desc: '',
@@ -399,12 +455,26 @@
                     bounded_catalogs: ''
                 },
                 editValue: '',
-                tableHoverId: ''
+                tableHoverId: '',
+                isImportServiceShow: false
             }
         },
         watch: {
             'treeInfo.node' () {
                 this.getList(1)
+            },
+            importCatalogId (val) {
+                if (val.length !== 0) {
+                    this.isCheckImport = false
+                }
+            },
+            isImportServiceShow (val) {
+                if (!val) {
+                    this.importFileNameList = []
+                    this.$nextTick(_ => {
+                        this.$refs.importInput.value = ''
+                    })
+                }
             }
         },
         created () {
@@ -427,6 +497,56 @@
             },
             handleChangeTree (val) {
                 this.editValue = val[val.length - 1]
+            },
+            closeFile () {
+                this.importFileNameList = []
+                this.$refs.importInput.value = ''
+            },
+            handleFile (e) {
+                const filename = e.target.value.split('\\').slice(-1)
+                this.importFileNameList = []
+                if (filename.length !== 0 && filename[0] !== '') {
+                    this.importFileNameList.push(filename[0])
+                    this.isCheckImport = false
+                }
+            },
+            closeImport () {
+                this.importCatalogId = []
+                this.isCheckImport = false
+                this.isImportServiceShow = false
+            },
+            importConfirm () {
+                const formdata = new FormData()
+                formdata.append('file', this.$refs.importInput.files[0])
+                formdata.append('catalog_id', this.importCatalogId.slice(-1))
+                formdata.append('project_key', this.$route.query.project_id)
+                if (this.importCatalogId.length === 0) {
+                    this.isCheckImport = true
+                    this.errorName = this.$t(`m["目录"]`)
+                    return
+                }
+                if (this.importFileNameList.length === 0) {
+                    this.isCheckImport = true
+                    this.errorName = this.$t(`m["文件"]`)
+                    return
+                }
+                this.isImportServiceShow = false
+                this.$store.dispatch('serviceEntry/importService', formdata).then(res => {
+                    this.$bkMessage({
+                        message: res.message,
+                        theme: 'success'
+                    })
+                    this.importCatalogId = []
+                    this.isImportServiceShow = false
+                    this.isCheckImport = false
+                    this.getList(1)
+                })
+            },
+            importService () {
+                this.isImportServiceShow = true
+            },
+            exportService (row) {
+                window.open(window.SITE_URL + `api/service/projects/${row.id}/export/`)
             },
             handleChange (type, row) {
                 // this.editValue = row.name
@@ -898,6 +1018,66 @@
     padding: 0;
     width: 16px;
     margin: 0 auto;
+}
+.bk-btn-file {
+    float: left;
+    line-height: 30px;
+    position: relative;
+    cursor: pointer;
+
+    .bk-input-file {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100px;
+        height: 32px;
+        overflow: hidden;
+        opacity: 0;
+        cursor: pointer;
+    }
+    .bk-input-tip {
+        position: absolute;
+        top: 0;
+        left: 110px;
+        font-size: 12px;
+        color: #979ba5;
+        cursor: auto;
+    }
+}
+.file-list {
+    border: 1px solid #e1ecff;
+    position: relative;
+    margin-left: 150px;
+    margin-top: 10px;
+    font-size: 12px;
+    padding: 1px 5px;
+    color: #979ba5;
+    .icon-itsm-icon-three-one {
+        display: none;
+        position: absolute;
+        right: 3px;
+        top: 4px;
+        cursor: pointer;
+    }
+    &:hover {
+        border: 1px solid #3a84ff;
+        .icon-itsm-icon-three-one {
+            display: block;
+            color: red;
+        }
+    }
+}
+.import-error-tip {
+    font-size: 14px;
+    margin-left: 150px;
+    margin-top: 10px;
+    color: red;
+}
+.bk-lable-display {
+    height: 16px;
+    display: flex;
+    overflow: hidden;
+    max-width: calc(100% - 20px);
 }
 
 </style>

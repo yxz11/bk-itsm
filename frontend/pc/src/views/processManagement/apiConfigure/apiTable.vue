@@ -26,7 +26,7 @@
             <p class="bk-api-title">{{ $t(`m.systemConfig["API列表"]`) }}</p>
             <div class="bk-api-button">
                 <bk-dropdown-menu class="mr10 access-btn" @show="dropdownShow" @hide="dropdownHide" ref="apiDropdown">
-                    <div class="dropdown-trigger-btn" style="padding-left: 19px;" slot="dropdown-trigger">
+                    <div class="dropdown-trigger-btn" style="padding-left: 12px;" slot="dropdown-trigger">
                         <span style="font-size: 14px;">{{ $t(`m.systemConfig['接入']`)}}</span>
                         <i :class="['bk-icon icon-angle-down',{ 'icon-flip': isDropdownShow }]"></i>
                     </div>
@@ -59,7 +59,7 @@
                     :class="{ 'btn-permission-disable': !projectId && !hasPermission(['public_api_create']) }"
                     :title="$t(`m.systemConfig['点击上传']`)"
                     class="mr10 bk-btn-file">
-                    <input :disabled="!projectId && !hasPermission(['public_api_create'])" type="file" :value="fileVal" class="bk-input-file" @change="handleFile">
+                    <input :type="!projectId && !hasPermission(['public_api_create']) ? 'button' : 'file'" :value="fileVal" class="bk-input-file" @change="handleFile" @click="hasImportPermission">
                     {{$t(`m.systemConfig['导入']`)}}
                 </bk-button>
                 <bk-button :theme="'default'"
@@ -452,14 +452,16 @@
                     }
                 })
             },
-            // 上传文件模板
-            handleFile (e) {
+            //
+            hasImportPermission () {
                 if (!this.projectId) {
                     if (!this.hasPermission(['public_api_create'])) {
                         this.applyForPermission(['public_api_create'], [], {})
-                        return
                     }
                 }
+            },
+            // 上传文件模板
+            handleFile (e) {
                 const fileInfo = e.target.files[0]
                 if (fileInfo.size <= 10 * 1024 * 1024) {
                     const data = new FormData()

@@ -24,7 +24,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 import logging
-from itsm.component.constants import SYSTEM_OPERATE, TRANSITION_OPERATE
+from itsm.component.constants import SYSTEM_OPERATE, TRANSITION_OPERATE, NODE_FAILED
 from itsm.component.esb.esbclient import client_backend
 from itsm.ticket.serializers import StatusSerializer
 from itsm.ticket.models import Ticket, TicketGlobalVariable
@@ -41,13 +41,7 @@ class BkOpsService(ItsmBaseService):
     interval = StaticIntervalGenerator(3)
 
     def prepare_task_params(self, state, ticket, sops_info):
-
-        fields = ticket.fields.values_list("key", "_value")
-        variables = TicketGlobalVariable.objects.filter(
-            ticket_id=ticket.id
-        ).values_list("key", "value")
-        values = dict(list(fields) + list(variables))
-
+        values = ticket.get_output_fields(return_format="dict")
         if sops_info["bk_biz_id"]["value_type"] == "variable":
             bk_biz_id = values.get(sops_info["bk_biz_id"]["value"], 0)
         else:
@@ -73,6 +67,8 @@ class BkOpsService(ItsmBaseService):
             # return raw response data
             "__raw": True,
         }
+
+        print(constants)
         return params
 
     def update_info(self, current_node, sops_result, **kwargs):
@@ -93,10 +89,25 @@ class BkOpsService(ItsmBaseService):
             error_message_template = kwargs.get("error_message_template")
             ticket = kwargs.get("ticket")
             state_id = kwargs.get("state_id")
-            self.update_info(current_node, sops_result, error_message=error_message, result=result)
-            current_node.set_failed_status(operator=processors, message=error_message_template,
-                                           detail_message=error_message)
-            ticket.node_status.filter(state_id=state_id).update(action_type=TRANSITION_OPERATE)
+            self.update_info(
+                current_node, sops_result, error_message=error_message, result=result
+            )
+            current_node.set_failed_status(
+                operator=processors,
+                message=error_message_template,
+                detail_message=error_message,
+            )
+            ticket.node_status.filter(state_id=state_id).update(
+                action_type=TRANSITION_OPERATE
+            )
+            # 发送通知
+            ticket.notify(
+                state_id=state_id,
+                receivers=processors,
+                message=error_message_template,
+                action=NODE_FAILED,
+                retry=False,
+            )
 
     def execute(self, data, parent_data):
         if super(BkOpsService, self).execute(data, parent_data):
@@ -106,7 +117,7 @@ class BkOpsService(ItsmBaseService):
         state_id = data.inputs.state_id
         ticket = Ticket.objects.get(id=ticket_id)
         ticket.do_before_enter_state(state_id, by_flow=self.by_flow)
-        processors = ticket.current_processors[1: -1]
+        processors = ticket.current_processors[1:-1]
         data.set_outputs("params_sops_result_%s" % state_id, False)
         current_node = ticket.node_status.get(state_id=state_id)
 
@@ -123,8 +134,11 @@ class BkOpsService(ItsmBaseService):
 
         # first step create_task
         state = ticket.state(state_id)
-        sops_info = current_node.query_params if current_node.query_params else state["extras"][
-            "sops_info"]
+        sops_info = (
+            current_node.query_params
+            if current_node.query_params
+            else state["extras"]["sops_info"]
+        )
         task_params = self.prepare_task_params(state, ticket, sops_info)
         api_info = [
             {
@@ -159,7 +173,7 @@ class BkOpsService(ItsmBaseService):
                 processors=processors,
                 error_message_template=error_message_template,
                 ticket=ticket,
-                state_id=state_id
+                state_id=state_id,
             )
             return False
 
@@ -173,7 +187,7 @@ class BkOpsService(ItsmBaseService):
                 processors=processors,
                 error_message_template=error_message_template,
                 ticket=ticket,
-                state_id=state_id
+                state_id=state_id,
             )
             return False
 
@@ -204,7 +218,7 @@ class BkOpsService(ItsmBaseService):
                 processors=processors,
                 error_message_template=error_message_template,
                 ticket=ticket,
-                state_id=state_id
+                state_id=state_id,
             )
             return False
 
@@ -218,7 +232,7 @@ class BkOpsService(ItsmBaseService):
                 processors=processors,
                 error_message_template=error_message_template,
                 ticket=ticket,
-                state_id=state_id
+                state_id=state_id,
             )
             return False
 
@@ -236,14 +250,14 @@ class BkOpsService(ItsmBaseService):
         state_id = data.inputs.state_id
         ticket = Ticket.objects.get(id=parent_data.inputs.ticket_id)
         current_node = ticket.node_status.get(state_id=state_id)
-        processors = ticket.current_processors[1: -1]
+        processors = ticket.current_processors[1:-1]
 
         sops_result, created = TicketGlobalVariable.objects.get_or_create(
             key="sops_result_" + str(state_id),
             name="sops_result_" + str(state_id),
             state_id=state_id,
             ticket_id=ticket.id,
-            value=""
+            value="",
         )
 
         if not sops_task_id:
@@ -257,7 +271,7 @@ class BkOpsService(ItsmBaseService):
                 processors=processors,
                 error_message_template=error_message,
                 ticket=ticket,
-                state_id=state_id
+                state_id=state_id,
             )
             self.finish_schedule()
             return False
@@ -278,7 +292,7 @@ class BkOpsService(ItsmBaseService):
                 processors=processors,
                 error_message_template=str(error),
                 ticket=ticket,
-                state_id=state_id
+                state_id=state_id,
             )
             self.finish_schedule()
             return False
@@ -292,7 +306,7 @@ class BkOpsService(ItsmBaseService):
                 processors=processors,
                 error_message_template=error_message,
                 ticket=ticket,
-                state_id=state_id
+                state_id=state_id,
             )
             self.finish_schedule()
             return False
@@ -316,7 +330,7 @@ class BkOpsService(ItsmBaseService):
                 processors=processors,
                 error_message_template=error_message,
                 ticket=ticket,
-                state_id=state_id
+                state_id=state_id,
             )
             self.finish_schedule()
             return False

@@ -37,6 +37,7 @@ from itsm.component.drf import viewsets as component_viewsets
 from itsm.component.drf.mixins import ApiGatewayMixin
 from itsm.component.exceptions import ServicePartialError, ServiceInsertError
 from itsm.component.exceptions import ObjectNotExist
+from itsm.openapi.decorators import catch_openapi_exception
 from itsm.openapi.service.serializers import (
     ServiceRetrieveSerializer,
     ServiceSerializer,
@@ -63,15 +64,12 @@ class ServiceViewSet(ApiGatewayMixin, component_viewsets.AuthModelViewSet):
     )
 
     @action(detail=False, methods=["get"], serializer_class=ServiceSerializer)
+    @catch_openapi_exception
     def get_services(self, request):
         """
         服务项列表
         """
-
-        project_key = request.query_params.get(
-            "project_key", DEFAULT_PROJECT_PROJECT_KEY
-        )
-        queryset = self.queryset.filter(project_key=project_key).all()
+        queryset = self.queryset.all()
 
         catalog_id = request.query_params.get("catalog_id")
         if catalog_id:
@@ -96,17 +94,13 @@ class ServiceViewSet(ApiGatewayMixin, component_viewsets.AuthModelViewSet):
         return Response(self.serializer_class(queryset, many=True).data)
 
     @action(detail=False, methods=["get"], serializer_class=ServiceRetrieveSerializer)
+    @catch_openapi_exception
     def get_service_detail(self, request):
         """
         服务项详情
         """
-        project_key = request.query_params.get(
-            "project_key", DEFAULT_PROJECT_PROJECT_KEY
-        )
         try:
-            service = self.queryset.get(
-                pk=request.query_params.get("service_id"), project_key=project_key
-            )
+            service = self.queryset.get(pk=request.query_params.get("service_id"))
         except Service.DoesNotExist:
             return Response(
                 {
@@ -120,6 +114,7 @@ class ServiceViewSet(ApiGatewayMixin, component_viewsets.AuthModelViewSet):
         return Response(self.serializer_class(service).data)
 
     @action(detail=False, methods=["get"])
+    @catch_openapi_exception
     def get_service_catalogs(self, request):
         """
         服务目录
@@ -146,6 +141,7 @@ class ServiceViewSet(ApiGatewayMixin, component_viewsets.AuthModelViewSet):
         return Response([ServiceCatalog.open_api_subtree(root) for root in roots])
 
     @action(detail=False, methods=["get"])
+    @catch_openapi_exception
     def get_service_roles(self, request):
         """
         服务目录
@@ -197,6 +193,7 @@ class ServiceViewSet(ApiGatewayMixin, component_viewsets.AuthModelViewSet):
         return Response(states_roles)
 
     @action(detail=False, methods=["post"])
+    @catch_openapi_exception
     def insert_service(self, requests):
         """
         插入或新服务和流程
@@ -214,6 +211,7 @@ class ServiceViewSet(ApiGatewayMixin, component_viewsets.AuthModelViewSet):
         return Response()
 
     @action(detail=False, methods=["post"])
+    @catch_openapi_exception
     @custom_apigw_required
     def import_service(self, request):
         data = request.data

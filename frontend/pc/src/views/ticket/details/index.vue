@@ -47,6 +47,7 @@
                         :ticket-id="ticketId"
                         :is-page-over="isPageOver"
                         :has-node-opt-auth="hasNodeOptAuth"
+                        :is-show-assgin="isShowAssgin"
                         :comment-loading="commentLoading"
                         :more-loading="moreLoading"
                         @addTargetComment="addTargetComment"
@@ -96,7 +97,7 @@
             theme="primary"
             :mask-close="false"
             header-position="left"
-            title="提示"
+            :title="$t(`m.newCommon['提示']`)"
             @confirm="onNoticeConfirm">
             {{$t(`m.newCommon['您要处理的节点已被']`)}} {{ noticeInfo.processed_user }} {{$t(`m.newCommon['处理完成，可在流转日志中查看详情。']`)}}
         </bk-dialog>
@@ -189,6 +190,7 @@
                 commentId: '',
                 threshold: [],
                 hasNodeOptAuth: false,
+                isShowAssgin: false,
                 basicStatus: true
             }
         },
@@ -228,9 +230,15 @@
                 this.hasNodeOptAuth = this.$refs.leftTicketContent.currentStepList.some(item => item.can_operate)
                 this.$store.commit('ticket/setHasTicketNodeOptAuth', this.hasNodeOptAuth)
             }
+            if (this.ticketInfo && this.ticketInfo.auth_actions) {
+                // 当前节点有权限不显示异常分派
+                this.isShowAssgin = this.ticketInfo.auth_actions.includes('ticket_management') && !this.hasNodeOptAuth
+            }
+            this.$store.commit('project/setProjectId', this.ticketInfo.project_key)
         },
         beforeDestroy () {
             this.clearTicketTimer()
+            this.$store.commit('project/setProjectId', window.DEFAULT_PROJECT)
         },
         methods: {
             // 同步数据，需等待 ticketInfo 返回
@@ -483,6 +491,7 @@
                     }
                 )
                 this.nodeList = copyList
+                this.$store.commit('deployOrder/setNodeList', this.nodeList)
                 this.initCurrentStepData()
             },
             // 获取当前单据状态颜色
